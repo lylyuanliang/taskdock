@@ -1,0 +1,70 @@
+:root,
+:root[data-theme="technical-calm"] {
+  --color-canvas: #0f1415;
+  --color-surface-low: #171c1d;
+  --color-surface: #1b2021;
+  --color-surface-high: #262b2c;
+  --color-text-primary: #dfe3e4;
+  --color-text-secondary: #bec9c4;
+  --color-border: #3e4945;
+  --color-accent: #81d6c0;
+  --color-warning: #ffb77f;
+  --color-danger: #ffb3ae;
+  --color-transparent: transparent;
+  --radius-control: 4px;
+  --space-unit: 4px;
+  --layout-navigation-wide: 280px;
+  --layout-navigation-compact: 72px;
+  --layout-workspace-bar-height: 60px;
+  --layout-page-gutter: 24px;
+  --layout-page-gutter-compact: 16px;
+  --layout-panel-gap: 12px;
+  --elevation-recessed: inset 0 2px 4px color-mix(in srgb, var(--color-canvas) 70%, transparent);
+}
+
+:root[data-theme="light"] {
+  --color-canvas: #f4f6f4;
+  --color-surface-low: #e8edeb;
+  --color-surface: #ffffff;
+  --color-surface-high: #dbe4e0;
+  --color-text-primary: #17201e;
+  --color-text-secondary: #51605b;
+  --color-border: #aebbb5;
+  --color-accent: #176f5b;
+  --color-warning: #9c4e12;
+  --color-danger: #a13d38;
+  --color-transparent: transparent;
+  --radius-control: 4px;
+  --space-unit: 4px;
+  --layout-navigation-wide: 280px;
+  --layout-navigation-compact: 72px;
+  --layout-workspace-bar-height: 60px;
+  --layout-page-gutter: 24px;
+  --layout-page-gutter-compact: 16px;
+  --layout-panel-gap: 12px;
+  --elevation-recessed: inset 0 2px 4px
+    color-mix(in srgb, var(--color-text-primary) 12%, transparent);
+}
+
+:root[data-theme="high-contrast"] {
+  --color-canvas: #000000;
+  --color-surface-low: #000000;
+  --color-surface: #000000;
+  --color-surface-high: #1a1a1a;
+  --color-text-primary: #ffffff;
+  --color-text-secondary: #ffffff;
+  --color-border: #ffffff;
+  --color-accent: #00ffd1;
+  --color-warning: #fff34d;
+  --color-danger: #ff8e8e;
+  --color-transparent: transparent;
+  --radius-control: 4px;
+  --space-unit: 4px;
+  --layout-navigation-wide: 280px;
+  --layout-navigation-compact: 72px;
+  --layout-workspace-bar-height: 60px;
+  --layout-page-gutter: 24px;
+  --layout-page-gutter-compact: 16px;
+  --layout-panel-gap: 12px;
+  --elevation-recessed: none;
+}
