@@ -1,6 +1,13 @@
 export type TaskPriority = "Low" | "Normal" | "High";
 
-export type RecurrenceRule = "Daily" | "Weekly" | "Monthly" | "Yearly";
+export type RecurrenceFrequency = "daily" | "weekly" | "monthly" | "yearly";
+
+export interface RecurrenceRule {
+  count: number | null;
+  frequency: RecurrenceFrequency;
+  interval: number;
+  until: string | null;
+}
 
 export type AppView = "inbox" | "today" | "upcoming" | "completed" | "projects" | "calendar";
 
@@ -36,6 +43,7 @@ export interface TaskDto {
   recurrence: RecurrenceRule | null;
   createdAt: string;
   updatedAt: string;
+  revision: number;
 }
 
 export interface TaskDraftInput {
@@ -50,6 +58,26 @@ export interface TaskPatchInput {
   note?: string;
   projectId?: string | null;
   completedAt?: string | null;
+}
+
+export interface TaskEditorDto {
+  subtasks: TaskDto[];
+  tagNames: string[];
+  task: TaskDto;
+}
+
+export interface TaskEditorDraftInput {
+  dueAt: string | null;
+  note: string;
+  priority: TaskPriority;
+  projectId: string | null;
+  recurrence: RecurrenceRule | null;
+  scheduledAt: string | null;
+  title: string;
+}
+
+export interface TaskEditorPatchInput extends Omit<TaskEditorDraftInput, "projectId"> {
+  projectId?: string | null;
 }
 
 export interface CommandError {

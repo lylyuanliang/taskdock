@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useRef, useState } from "react";
 import { Archive, Check, Pencil, Plus } from "lucide-react";
 import { archiveProject, createProject, renameProject } from "../../api/projects";
 import { isTranslationKey, t } from "../../i18n";
@@ -35,9 +35,17 @@ function ProjectList({
   const [renamedProjectName, setRenamedProjectName] = useState("");
   const [errorMessageKey, setErrorMessageKey] = useState<string | null>(null);
   const [pendingProjectId, setPendingProjectId] = useState<string | null>(null);
+  const mutationInFlightRef = useRef(false);
+  const isCreatePending = pendingProjectId === "new";
+  const isMutationPending = pendingProjectId !== null;
 
   async function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (isLoading || mutationInFlightRef.current) {
+      return;
+    }
+
+    mutationInFlightRef.current = true;
     setPendingProjectId("new");
     setErrorMessageKey(null);
     try {
@@ -47,12 +55,18 @@ function ProjectList({
     } catch (error: unknown) {
       setErrorMessageKey(getCommandErrorMessageKey(error));
     } finally {
+      mutationInFlightRef.current = false;
       setPendingProjectId(null);
     }
   }
 
   async function handleRename(event: FormEvent<HTMLFormElement>, id: string) {
     event.preventDefault();
+    if (isLoading || mutationInFlightRef.current) {
+      return;
+    }
+
+    mutationInFlightRef.current = true;
     setPendingProjectId(id);
     setErrorMessageKey(null);
     try {
@@ -62,11 +76,17 @@ function ProjectList({
     } catch (error: unknown) {
       setErrorMessageKey(getCommandErrorMessageKey(error));
     } finally {
+      mutationInFlightRef.current = false;
       setPendingProjectId(null);
     }
   }
 
   async function handleArchive(id: string) {
+    if (isLoading || mutationInFlightRef.current) {
+      return;
+    }
+
+    mutationInFlightRef.current = true;
     setPendingProjectId(id);
     setErrorMessageKey(null);
     try {
@@ -78,20 +98,26 @@ function ProjectList({
     } catch (error: unknown) {
       setErrorMessageKey(getCommandErrorMessageKey(error));
     } finally {
+      mutationInFlightRef.current = false;
       setPendingProjectId(null);
     }
   }
 
   return (
-    <aside aria-labelledby="project-list-heading" className="project-list">
+    <aside
+      aria-busy={isLoading || isMutationPending}
+      aria-labelledby="project-list-heading"
+      className="project-list"
+    >
       <div className="project-list__header">
         <h2 id="project-list-heading">{t("projects.title")}</h2>
       </div>
-      <form className="project-list__create" onSubmit={handleCreate}>
+      <form aria-busy={isCreatePending} className="project-list__create" onSubmit={handleCreate}>
         <label className="sr-only" htmlFor="project-name">
           {t("project.name")}
         </label>
         <input
+          disabled={isLoading || isMutationPending}
           id="project-name"
           onChange={(event) => setName(event.target.value)}
           placeholder={t("projects.create.placeholder")}
@@ -100,16 +126,21 @@ function ProjectList({
         <button
           aria-label={t("project.create")}
           className="project-list__action"
-          disabled={pendingProjectId === "new"}
+          disabled={isLoading || isMutationPending}
           title={t("project.create")}
           type="submit"
         >
           <Plus aria-hidden="true" size={16} />
         </button>
       </form>
-      {(errorMessageKey ?? listErrorMessageKey) ? (
+      {listErrorMessageKey ? (
         <p className="task-list__error" role="alert">
-          {translateErrorMessage(errorMessageKey ?? listErrorMessageKey ?? "errors.unknown")}
+          {translateErrorMessage(listErrorMessageKey)}
+        </p>
+      ) : null}
+      {errorMessageKey ? (
+        <p className="task-list__error" role="alert">
+          {translateErrorMessage(errorMessageKey)}
         </p>
       ) : null}
       {isLoading ? (
@@ -122,65 +153,75 @@ function ProjectList({
           {t("projects.empty")}
         </p>
       ) : null}
-      {!isLoading && projects.length > 0 ? (
+      {projects.length > 0 ? (
         <ul aria-label={t("projects.title")} className="project-list__items">
-          {projects.map((project) => (
-            <li key={project.id}>
-              <button
-                aria-current={selectedProjectId === project.id ? "page" : undefined}
-                className="project-list__select"
-                onClick={() => onSelect(project.id)}
-                type="button"
+          {projects.map((project) => {
+            const isProjectPending = pendingProjectId === project.id;
+
+            return (
+              <li
+                className={isProjectPending ? "project-list__pending" : undefined}
+                key={project.id}
               >
-                <span aria-hidden="true" className="project-list__marker" />
-                <span>{project.name}</span>
-              </button>
-              {editingProjectId === project.id ? (
-                <form onSubmit={(event) => void handleRename(event, project.id)}>
-                  <label className="sr-only" htmlFor={`project-rename-${project.id}`}>
-                    {`${t("project.rename")} ${project.name}`}
-                  </label>
-                  <input
-                    id={`project-rename-${project.id}`}
-                    onChange={(event) => setRenamedProjectName(event.target.value)}
-                    value={renamedProjectName}
-                  />
-                  <button
-                    aria-label={t("project.rename.save")}
-                    className="project-list__action"
-                    disabled={pendingProjectId === project.id}
-                    title={t("project.rename.save")}
-                    type="submit"
-                  >
-                    <Check aria-hidden="true" size={16} />
-                  </button>
-                </form>
-              ) : (
                 <button
-                  aria-label={`${t("project.rename")} ${project.name}`}
-                  className="project-list__action"
-                  onClick={() => {
-                    setEditingProjectId(project.id);
-                    setRenamedProjectName(project.name);
-                  }}
-                  title={`${t("project.rename")} ${project.name}`}
+                  aria-current={selectedProjectId === project.id ? "page" : undefined}
+                  className="project-list__select"
+                  disabled={isLoading || isProjectPending}
+                  onClick={() => onSelect(project.id)}
                   type="button"
                 >
-                  <Pencil aria-hidden="true" size={15} />
+                  <span aria-hidden="true" className="project-list__marker" />
+                  <span>{project.name}</span>
                 </button>
-              )}
-              <button
-                aria-label={`${t("project.archive")} ${project.name}`}
-                className="project-list__action"
-                disabled={pendingProjectId === project.id}
-                onClick={() => void handleArchive(project.id)}
-                title={`${t("project.archive")} ${project.name}`}
-                type="button"
-              >
-                <Archive aria-hidden="true" size={15} />
-              </button>
-            </li>
-          ))}
+                {editingProjectId === project.id ? (
+                  <form onSubmit={(event) => void handleRename(event, project.id)}>
+                    <label className="sr-only" htmlFor={`project-rename-${project.id}`}>
+                      {`${t("project.rename")} ${project.name}`}
+                    </label>
+                    <input
+                      disabled={isLoading || isMutationPending}
+                      id={`project-rename-${project.id}`}
+                      onChange={(event) => setRenamedProjectName(event.target.value)}
+                      value={renamedProjectName}
+                    />
+                    <button
+                      aria-label={t("project.rename.save")}
+                      className="project-list__action"
+                      disabled={isLoading || isMutationPending}
+                      title={t("project.rename.save")}
+                      type="submit"
+                    >
+                      <Check aria-hidden="true" size={16} />
+                    </button>
+                  </form>
+                ) : (
+                  <button
+                    aria-label={`${t("project.rename")} ${project.name}`}
+                    className="project-list__action"
+                    disabled={isLoading || isMutationPending}
+                    onClick={() => {
+                      setEditingProjectId(project.id);
+                      setRenamedProjectName(project.name);
+                    }}
+                    title={`${t("project.rename")} ${project.name}`}
+                    type="button"
+                  >
+                    <Pencil aria-hidden="true" size={15} />
+                  </button>
+                )}
+                <button
+                  aria-label={`${t("project.archive")} ${project.name}`}
+                  className="project-list__action"
+                  disabled={isLoading || isMutationPending}
+                  onClick={() => void handleArchive(project.id)}
+                  title={`${t("project.archive")} ${project.name}`}
+                  type="button"
+                >
+                  <Archive aria-hidden="true" size={15} />
+                </button>
+              </li>
+            );
+          })}
         </ul>
       ) : null}
     </aside>

@@ -1,7 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
-import { StrictMode, useCallback, useEffect, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { StrictMode, useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { createTask, listTasks, updateTask } from "../api/tasks";
+import { completeTask, createTask, listTasks } from "../api/tasks";
 import {
   getCommandErrorMessageKey,
   type TaskDraftInput,
@@ -18,30 +19,42 @@ export function QuickPanelApp() {
   const [behaviorErrorMessageKey, setBehaviorErrorMessageKey] = useState<string | null>(null);
   const [taskErrorMessageKey, setTaskErrorMessageKey] = useState<string | null>(null);
   const [tasks, setTasks] = useState<TaskSummaryDto[]>([]);
+  const taskRequestIdRef = useRef(0);
 
   const reloadTasks = useCallback(async () => {
+    const requestId = taskRequestIdRef.current + 1;
+
+    taskRequestIdRef.current = requestId;
+
     try {
       const loadedTasks = await listTasks({ kind: "today" });
-      setTasks(loadedTasks);
-      setTaskErrorMessageKey(null);
+      if (taskRequestIdRef.current === requestId) {
+        setTasks(loadedTasks);
+        setTaskErrorMessageKey(null);
+      }
     } catch (error: unknown) {
-      setTaskErrorMessageKey(getCommandErrorMessageKey(error));
-      throw error;
+      if (taskRequestIdRef.current === requestId) {
+        setTaskErrorMessageKey(getCommandErrorMessageKey(error));
+        throw error;
+      }
     }
   }, []);
 
   useEffect(() => {
     let isCurrent = true;
+    const requestId = taskRequestIdRef.current + 1;
 
-    listTasks({ kind: "today" })
+    taskRequestIdRef.current = requestId;
+
+    void listTasks({ kind: "today" })
       .then((loadedTasks) => {
-        if (isCurrent) {
+        if (isCurrent && taskRequestIdRef.current === requestId) {
           setTasks(loadedTasks);
           setTaskErrorMessageKey(null);
         }
       })
       .catch((error: unknown) => {
-        if (isCurrent) {
+        if (isCurrent && taskRequestIdRef.current === requestId) {
           setTaskErrorMessageKey(getCommandErrorMessageKey(error));
         }
       });
@@ -50,6 +63,34 @@ export function QuickPanelApp() {
       isCurrent = false;
     };
   }, []);
+
+  useEffect(() => {
+    let isCurrent = true;
+    let unlisten: (() => void) | null = null;
+
+    void listen("task://mutated", () => {
+      if (isCurrent) {
+        void reloadTasks().catch(() => undefined);
+      }
+    })
+      .then((registeredUnlisten) => {
+        if (!isCurrent) {
+          registeredUnlisten();
+          return;
+        }
+
+        unlisten = registeredUnlisten;
+        void reloadTasks().catch(() => undefined);
+      })
+      .catch((error: unknown) => {
+        console.error("Unable to subscribe to task mutation events", error);
+      });
+
+    return () => {
+      isCurrent = false;
+      unlisten?.();
+    };
+  }, [reloadTasks]);
 
   useEffect(() => {
     let isCurrent = true;
@@ -63,7 +104,7 @@ export function QuickPanelApp() {
       })
       .catch((error: unknown) => {
         if (isCurrent) {
-          setBehavior("hover");
+          setBehavior("click");
           setBehaviorErrorMessageKey(getCommandErrorMessageKey(error));
         }
       });
@@ -78,7 +119,7 @@ export function QuickPanelApp() {
   }
 
   async function handleComplete(id: string) {
-    await updateTask(id, { completedAt: new Date().toISOString() });
+    await completeTask(id);
     await reloadTasks();
   }
 

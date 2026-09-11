@@ -1,8 +1,9 @@
-import { useEffect, useReducer, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useReducer, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { FolderKanban, Search } from "lucide-react";
 import "../App.css";
 import { listProjects } from "../api/projects";
-import { listInbox, listTasks, updateTask } from "../api/tasks";
+import { completeTask, listInbox, listTasks, updateTask } from "../api/tasks";
 import MonthCalendar from "../features/calendar/MonthCalendar";
 import {
   calendarQueryReducer,
@@ -121,6 +122,7 @@ function toSummaryInsightItem(task: TaskSummaryDto): TaskInsightItem {
 
 function App() {
   const [editingTask, setEditingTask] = useState<TaskDto | null>(null);
+  const [editorRefreshVersion, setEditorRefreshVersion] = useState(0);
   const [inboxLoadState, setInboxLoadState] = useState<InboxLoadState>({
     requestId: 0,
     status: "loading",
@@ -155,6 +157,7 @@ function App() {
     initialSearchQueryState,
   );
   const activeViewRef = useRef<AppView>(activeView);
+  const calendarMonthRef = useRef(calendarMonth);
   const calendarRequestIdRef = useRef(0);
   const inboxLoadRequestRef = useRef<InboxLoadRequest | null>(null);
   const inboxRequestIdRef = useRef(0);
@@ -288,16 +291,16 @@ function App() {
     }
 
     let isCurrent = true;
-    const { projectId } = projectTaskLoadRequest;
+    const { projectId, requestId } = projectTaskLoadRequest;
 
     async function loadProjectTasks() {
       try {
         const tasks = await listTasks({ kind: "project", projectId });
-        if (isCurrent) {
+        if (isCurrent && projectTaskRequestIdRef.current === requestId) {
           setProjectTaskState({ errorMessageKey: null, isLoading: false, tasks });
         }
       } catch (error: unknown) {
-        if (isCurrent) {
+        if (isCurrent && projectTaskRequestIdRef.current === requestId) {
           setProjectTaskState({
             errorMessageKey: getCommandErrorMessageKey(error),
             isLoading: false,
@@ -434,6 +437,7 @@ function App() {
     const requestId = calendarRequestIdRef.current + 1;
 
     calendarRequestIdRef.current = requestId;
+    calendarMonthRef.current = month;
     dispatchCalendarQuery({ month, requestId, type: "calendarLoadStarted" });
   }
 
@@ -469,12 +473,21 @@ function App() {
     }
 
     if (view === "calendar") {
-      startCalendarLoad(calendarMonth);
+      startCalendarLoad(calendarMonthRef.current);
       return;
     }
 
     startSummaryLoad(view);
   }
+
+  const refreshCurrentView = useEffectEvent(() => {
+    refreshView(activeViewRef.current);
+  });
+
+  const refreshAfterTaskMutation = useEffectEvent(() => {
+    refreshCurrentView();
+    setEditorRefreshVersion((current) => current + 1);
+  });
 
   function updatePendingTask(id: string, isPending: boolean) {
     if (isPending) {
@@ -610,9 +623,11 @@ function App() {
     setMutationErrorState((current) => (current?.view === mutation.view ? null : current));
 
     try {
-      await updateTask(id, {
-        completedAt: completed ? null : new Date().toISOString(),
-      });
+      if (completed) {
+        await updateTask(id, { completedAt: null });
+      } else {
+        await completeTask(id);
+      }
 
       if (mutation.view === "projects") {
         const projectId = selectedProjectIdRef.current;
@@ -640,6 +655,34 @@ function App() {
       updatePendingTask(mutation.id, false);
     }
   }
+
+  useEffect(() => {
+    let isCurrent = true;
+    let unlisten: (() => void) | null = null;
+
+    void listen("task://mutated", () => {
+      if (isCurrent) {
+        refreshAfterTaskMutation();
+      }
+    })
+      .then((registeredUnlisten) => {
+        if (!isCurrent) {
+          registeredUnlisten();
+          return;
+        }
+
+        unlisten = registeredUnlisten;
+        refreshAfterTaskMutation();
+      })
+      .catch((error: unknown) => {
+        console.error("Unable to subscribe to task mutation events", error);
+      });
+
+    return () => {
+      isCurrent = false;
+      unlisten?.();
+    };
+  }, []);
 
   const summaryLoadState = summaryQueryState.loadState;
   const calendarLoadState = calendarQueryState.loadState;
@@ -697,6 +740,7 @@ function App() {
           ) : null}
           {activeView === "inbox" && isEditorOpen ? (
             <TaskEditor
+              editorRefreshVersion={editorRefreshVersion}
               key={editingTask?.id ?? "new-task"}
               onSaved={handleTaskSaved}
               task={editingTask ?? undefined}

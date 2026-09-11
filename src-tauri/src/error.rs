@@ -8,7 +8,6 @@ pub(crate) enum AppErrorKind {
     Conflict,
     NotFound,
     Storage,
-    #[expect(dead_code, reason = "M2 后台同步失败映射接入前预留内部错误分类")]
     Internal,
 }
 

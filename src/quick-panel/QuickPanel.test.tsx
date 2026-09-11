@@ -1,9 +1,14 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { TaskSummaryDto } from "../features/tasks/taskTypes";
 import { QuickPanel } from "./QuickPanel";
 import "./quickPanel.css";
+
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: vi.fn(),
+}));
 
 const openTodayTask: TaskSummaryDto = {
   childCompleted: 0,
@@ -76,7 +81,6 @@ describe("QuickPanel", () => {
     const dragHandleStyle = window.getComputedStyle(dragHandle);
     const toggleStyle = window.getComputedStyle(toggle);
 
-    expect(dragHandle).toHaveAttribute("data-tauri-drag-region");
     expect(dragHandle).toHaveAttribute("title", "Move quick panel");
     expect(dragHandle.querySelector("svg")).toHaveClass("lucide-grip-vertical");
     expect(dragHandleStyle.height).toBe("44px");
@@ -85,6 +89,32 @@ describe("QuickPanel", () => {
     expect(toggleStyle.right).toBe("0px");
     expect(toggleStyle.width).toBe("28px");
     expect(toggle).not.toHaveAttribute("data-tauri-drag-region");
+  });
+
+  it("starts native dragging when the collapsed handle icon receives a primary mouse press", () => {
+    const startDragging = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(getCurrentWindow).mockReturnValue({
+      startDragging,
+    } as unknown as ReturnType<typeof getCurrentWindow>);
+
+    render(
+      <QuickPanel
+        behavior="click"
+        onComplete={vi.fn()}
+        onCreate={vi.fn()}
+        onModeChange={vi.fn()}
+        tasks={[openTodayTask]}
+      />,
+    );
+
+    const dragIcon = screen.getByLabelText("Move quick panel").querySelector("svg");
+    if (!dragIcon) {
+      throw new Error("Expected the collapsed drag icon to render");
+    }
+
+    fireEvent.mouseDown(dragIcon, { button: 0, buttons: 1 });
+
+    expect(startDragging).toHaveBeenCalledOnce();
   });
 
   it("collapses after the hover exit delay", async () => {
@@ -138,6 +168,29 @@ describe("QuickPanel", () => {
 
     await user.click(screen.getByRole("button", { name: "Close quick panel" }));
     expect(screen.queryByText(openTodayTask.title)).not.toBeInTheDocument();
+  });
+
+  it("exposes a draggable header and an X close control when expanded", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <QuickPanel
+        behavior="click"
+        onComplete={vi.fn()}
+        onCreate={vi.fn()}
+        onModeChange={vi.fn().mockResolvedValue(undefined)}
+        tasks={[openTodayTask]}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Open quick panel" }));
+
+    const dragHeader = screen.getByLabelText("Move quick panel");
+    const closeButton = screen.getByRole("button", { name: "Close quick panel" });
+
+    expect(dragHeader).toHaveAttribute("title", "Move quick panel");
+    expect(dragHeader.querySelector("svg")).toHaveClass("lucide-grip-horizontal");
+    expect(closeButton.querySelector("svg")).toHaveClass("lucide-x");
   });
 
   it("completes an open Today task through the supplied real task callback", async () => {

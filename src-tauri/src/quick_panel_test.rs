@@ -164,6 +164,54 @@ fn moved_position_is_clamped_and_persisted_with_monitor_identity() {
 }
 
 #[test]
+fn new_quick_panel_preferences_default_to_click_behavior() {
+    let app_data_dir = unique_app_data_dir();
+    fs::create_dir_all(&app_data_dir).unwrap();
+
+    let state = QuickPanelNativeState::open(&app_data_dir).unwrap();
+
+    assert_eq!(
+        state.preferences().unwrap().behavior,
+        QuickPanelBehavior::Click
+    );
+
+    fs::remove_dir_all(app_data_dir).unwrap();
+}
+
+#[test]
+fn legacy_hover_preferences_migrate_to_click_without_losing_position() {
+    let app_data_dir = unique_app_data_dir();
+    fs::create_dir_all(&app_data_dir).unwrap();
+    fs::write(
+        app_data_dir.join("quick-panel-preferences.json"),
+        r#"{
+  "behavior": "hover",
+  "position": {
+    "monitorId": "primary",
+    "offset": { "x": 120.0, "y": 64.0 }
+  },
+  "version": 2
+}"#,
+    )
+    .unwrap();
+
+    let state = QuickPanelNativeState::open(&app_data_dir).unwrap();
+    let preferences = state.preferences().unwrap();
+
+    assert_eq!(preferences.behavior, QuickPanelBehavior::Click);
+    assert_eq!(
+        preferences.position,
+        Some(SavedPanelPosition::new(
+            "primary",
+            LogicalPosition::new(120.0, 64.0)
+        ))
+    );
+    assert_eq!(preferences.version, 3);
+
+    fs::remove_dir_all(app_data_dir).unwrap();
+}
+
+#[test]
 fn production_behavior_setter_persists_click_behavior() {
     let app_data_dir = unique_app_data_dir();
     fs::create_dir_all(&app_data_dir).unwrap();
@@ -189,7 +237,7 @@ fn failed_preferences_write_does_not_mutate_memory_state() {
     assert!(state.set_behavior(QuickPanelBehavior::Click).is_err());
     assert_eq!(
         state.preferences().unwrap().behavior,
-        QuickPanelBehavior::Hover
+        QuickPanelBehavior::Click
     );
 
     fs::remove_file(invalid_app_data_dir).unwrap();

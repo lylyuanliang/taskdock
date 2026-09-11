@@ -106,7 +106,12 @@ function SearchDialog({ isOpen, onClose, onInputChange, state }: SearchDialogPro
             value={input}
           />
         </label>
-        <section aria-live="polite" className="search-dialog__results">
+        <section
+          aria-busy={loadState.status === "loading" ? true : undefined}
+          aria-label={t("search.results")}
+          aria-live="polite"
+          className="search-dialog__results"
+        >
           {!query ? (
             <p className="task-list__status" role="status">
               {t("search.prompt")}

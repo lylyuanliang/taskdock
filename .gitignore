@@ -7,6 +7,10 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Python caches
+__pycache__/
+*.py[cod]
+
 node_modules
 dist
 dist-ssr
@@ -16,6 +20,7 @@ dist-ssr
 .env.*
 !.env.example
 docs/handoffs/
+docs/superpowers/
 .superpowers/
 coverage/
 playwright-report/

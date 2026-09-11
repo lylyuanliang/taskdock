@@ -21,14 +21,15 @@ const EXPANDED_WIDTH: f64 = 320.0;
 const EXPANDED_MAX_HEIGHT: f64 = 480.0;
 const MOVED_DEBOUNCE: Duration = Duration::from_millis(140);
 const PREFERENCES_FILE_NAME: &str = "quick-panel-preferences.json";
-const PREFERENCES_VERSION: u8 = 2;
+const LEGACY_HOVER_PREFERENCES_VERSION: u8 = 2;
+const PREFERENCES_VERSION: u8 = 3;
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum QuickPanelBehavior {
     #[default]
-    Hover,
     Click,
+    Hover,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -159,7 +160,7 @@ pub(crate) struct QuickPanelPreferences {
 impl Default for QuickPanelPreferences {
     fn default() -> Self {
         Self {
-            behavior: QuickPanelBehavior::Hover,
+            behavior: QuickPanelBehavior::Click,
             position: None,
             version: PREFERENCES_VERSION,
         }
@@ -405,7 +406,15 @@ fn read_preferences(path: &Path) -> Option<QuickPanelPreferences> {
         .ok()
         .and_then(|contents| serde_json::from_str::<QuickPanelPreferences>(&contents).ok())?;
 
-    (preferences.version == PREFERENCES_VERSION).then_some(preferences)
+    match preferences.version {
+        PREFERENCES_VERSION => Some(preferences),
+        LEGACY_HOVER_PREFERENCES_VERSION => Some(QuickPanelPreferences {
+            behavior: QuickPanelBehavior::Click,
+            position: preferences.position,
+            version: PREFERENCES_VERSION,
+        }),
+        _ => None,
+    }
 }
 
 fn save_preferences(path: &Path, preferences: &QuickPanelPreferences) -> io::Result<()> {
@@ -664,7 +673,7 @@ pub(crate) fn build_quick_panel(
         "quick-panel",
         WebviewUrl::App("quick-panel.html".into()),
     )
-    .title("Todo")
+    .title("TaskDock")
     .decorations(false)
     .transparent(true)
     .always_on_top(true)

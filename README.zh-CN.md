@@ -26,7 +26,7 @@ TaskDock 是一款本地优先的桌面任务管理工具，面向个人工作�
 
 ## 名称说明
 
-Git 仓库名称为 **TaskDock**。当前预发布 UI 与打包配置仍保留旧名称 `Todo` 和 `todo-app`；品牌名称将在独立任务中统一。
+面向用户的产品和安装包名称为 **TaskDock**。Rust 包名和本地 `todo-app.sqlite3` 数据库文件名等内部兼容名称会保留，避免仅因品牌调整迁移已有的本地任务数据。
 
 ## 技术栈
 
@@ -85,13 +85,33 @@ pnpm dev
 pnpm tauri dev
 ```
 
-构建生产安装包：
+## Windows 发布构建
+
+以下流程面向维护者手动构建 Windows 发布包，不用于日常开发。开始前请关闭所有 `pnpm tauri dev` 实例。Tauri 构建命令会自动执行已配置的前端生产构建。
 
 ```powershell
+pnpm install --frozen-lockfile
+pnpm test
+pnpm lint
+pnpm format:check
+
+Push-Location src-tauri
+cargo fmt --check
+cargo clippy -- -D warnings
+cargo test
+Pop-Location
+
 pnpm tauri build
 ```
 
-Tauri 构建输出位于 `src-tauri/target/`，该目录已被 Git 忽略。
+Windows 安装包会生成在以下已被 Git 忽略的目录中：
+
+```text
+src-tauri/target/release/bundle/nsis/
+src-tauri/target/release/bundle/msi/
+```
+
+应将 NSIS 安装程序作为主要发布文件上传；MSI 安装包可选，主要用于受统一管理的 Windows 环境。不要提交这两类生成的安装包。
 
 ## 质量检查
 
