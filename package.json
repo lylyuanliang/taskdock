@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest run",
+    "test:e2e": "python tests/e2e/daily_flow.py",
     "test:watch": "vitest",
     "lint": "eslint . --max-warnings 0",
     "format:check": "prettier --check ."

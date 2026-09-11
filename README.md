@@ -26,7 +26,7 @@ TaskDock is a local-first desktop task manager for personal work, software deliv
 
 ## Screens And Naming
 
-The repository is named **TaskDock**. The current pre-release UI and bundle configuration still use the legacy names `Todo` and `todo-app`; product branding will be unified in a separate change.
+The user-facing product and bundle name is **TaskDock**. Internal compatibility names, including the Rust package and the local `todo-app.sqlite3` database filename, intentionally remain unchanged so existing local task data is not migrated solely for branding.
 
 ## Technology
 
@@ -85,13 +85,33 @@ The browser server has no task/project data adapter, so task and project operati
 pnpm tauri dev
 ```
 
-Create a production bundle:
+## Windows Release Build
+
+The following process is for maintainers creating a manual Windows release, not for normal development. Stop every `pnpm tauri dev` instance before starting. The Tauri build command runs the configured frontend production build automatically.
 
 ```powershell
+pnpm install --frozen-lockfile
+pnpm test
+pnpm lint
+pnpm format:check
+
+Push-Location src-tauri
+cargo fmt --check
+cargo clippy -- -D warnings
+cargo test
+Pop-Location
+
 pnpm tauri build
 ```
 
-The Tauri build outputs are generated under `src-tauri/target/` and are intentionally excluded from Git.
+The Windows installers are generated under these Git-ignored directories:
+
+```text
+src-tauri/target/release/bundle/nsis/
+src-tauri/target/release/bundle/msi/
+```
+
+Upload the NSIS setup executable as the primary release asset. The MSI installer is optional, primarily for managed Windows environments. Do not commit either generated installer.
 
 ## Quality Checks
 

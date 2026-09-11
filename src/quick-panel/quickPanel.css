@@ -41,14 +41,6 @@ input {
   width: 320px;
 }
 
-.quick-panel__drag-surface {
-  height: 12px;
-  left: 0;
-  position: absolute;
-  right: 44px;
-  top: 0;
-}
-
 .quick-panel__drag-handle {
   align-items: center;
   color: var(--color-text-secondary);
@@ -76,6 +68,7 @@ input {
   right: 0;
   top: 0;
   width: 42px;
+  z-index: 1;
 }
 
 .quick-panel--collapsed .quick-panel__toggle {
@@ -102,6 +95,7 @@ input {
   margin: 0;
   overflow-wrap: anywhere;
   padding: 4px 48px 4px 8px;
+  pointer-events: none;
   position: relative;
   z-index: 1;
 }
@@ -113,9 +107,15 @@ input {
 }
 
 .quick-panel__header {
+  align-items: center;
   border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  cursor: move;
+  display: flex;
   font-size: 12px;
-  padding: 16px 16px 8px;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 52px 0 10px;
 }
 
 .quick-panel__tasks {

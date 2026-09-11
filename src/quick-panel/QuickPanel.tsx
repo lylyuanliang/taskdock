@@ -1,5 +1,6 @@
-import { CheckCircle2, Circle, GripVertical } from "lucide-react";
-import { FocusEvent, FormEvent, useEffect, useRef, useState } from "react";
+import { CheckCircle2, Circle, GripHorizontal, GripVertical, X } from "lucide-react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { FocusEvent, FormEvent, MouseEvent, useEffect, useRef, useState } from "react";
 import {
   getCommandErrorMessageKey,
   type TaskDraftInput,
@@ -142,6 +143,18 @@ export function QuickPanel({
     }
   }
 
+  function handleDragStart(event: MouseEvent<HTMLElement>) {
+    if (event.button !== 0) {
+      return;
+    }
+
+    void getCurrentWindow()
+      .startDragging()
+      .catch((error: unknown) => {
+        setLocalErrorMessageKey(getCommandErrorMessageKey(error));
+      });
+  }
+
   async function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const trimmedTitle = title.trim();
@@ -198,18 +211,16 @@ export function QuickPanel({
       onPointerLeave={handlePointerLeave}
       ref={sectionRef}
     >
-      {isExpanded ? (
-        <div className="quick-panel__drag-surface" data-tauri-drag-region />
-      ) : (
+      {!isExpanded ? (
         <div
           aria-label={t("quickPanel.move")}
           className="quick-panel__drag-handle"
-          data-tauri-drag-region
+          onMouseDown={handleDragStart}
           title={t("quickPanel.move")}
         >
           <GripVertical aria-hidden="true" size={12} strokeWidth={1.75} />
         </div>
-      )}
+      ) : null}
       <button
         aria-label={toggleLabel}
         className="quick-panel__toggle"
@@ -218,7 +229,11 @@ export function QuickPanel({
         title={toggleLabel}
         type="button"
       >
-        <CheckCircle2 aria-hidden="true" size={20} strokeWidth={1.75} />
+        {isExpanded ? (
+          <X aria-hidden="true" size={20} strokeWidth={1.75} />
+        ) : (
+          <CheckCircle2 aria-hidden="true" size={20} strokeWidth={1.75} />
+        )}
       </button>
       {displayedErrorMessageKey ? (
         <p className="quick-panel__error" role="alert">
@@ -227,7 +242,13 @@ export function QuickPanel({
       ) : null}
       {isExpanded ? (
         <div className="quick-panel__content">
-          <div className="quick-panel__header">
+          <div
+            aria-label={t("quickPanel.move")}
+            className="quick-panel__header"
+            onMouseDown={handleDragStart}
+            title={t("quickPanel.move")}
+          >
+            <GripHorizontal aria-hidden="true" size={14} strokeWidth={1.75} />
             <span>{t("quickPanel.today")}</span>
           </div>
           <ul aria-label={t("quickPanel.today")} className="quick-panel__tasks">
