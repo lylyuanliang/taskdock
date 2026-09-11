@@ -33,7 +33,7 @@ it("renders the product identity and exposes a global new-task command", async (
 
   render(<AppNavigation activeView="inbox" onCreateTask={onCreateTask} onViewChange={vi.fn()} />);
 
-  expect(screen.getByText("Todo")).toBeInTheDocument();
+  expect(screen.getByText("TaskDock")).toBeInTheDocument();
   expect(screen.getByText("Technical Calm")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Add task" }));
 

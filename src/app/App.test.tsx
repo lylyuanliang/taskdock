@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { StrictMode } from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -10,7 +11,12 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
 }));
 
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(),
+}));
+
 const invokeMock = vi.mocked(invoke);
+const listenMock = vi.mocked(listen);
 const savedTask = {
   id: "task-1",
   title: "Review schema",
@@ -24,6 +30,7 @@ const savedTask = {
   recurrence: null,
   createdAt: "2026-08-27T00:00:00Z",
   updatedAt: "2026-08-27T00:00:00Z",
+  revision: 1,
 };
 
 const updatedTask = {
@@ -31,6 +38,18 @@ const updatedTask = {
   title: "Review release",
   note: "Add migration result",
   updatedAt: "2026-08-27T01:00:00Z",
+};
+
+const savedEditor = {
+  subtasks: [],
+  tagNames: [],
+  task: savedTask,
+};
+
+const updatedEditor = {
+  subtasks: [],
+  tagNames: [],
+  task: updatedTask,
 };
 
 function createDeferred<T>() {
@@ -127,16 +146,485 @@ async function loadMainWithMockedReactRoot(): Promise<void> {
 }
 
 beforeEach(() => {
+  listenMock.mockReset();
+  listenMock.mockImplementation(() => new Promise(() => undefined));
   invokeMock.mockReset();
   invokeMock
     .mockResolvedValueOnce([])
     .mockResolvedValueOnce([])
-    .mockResolvedValueOnce(savedTask)
+    .mockResolvedValueOnce(savedEditor)
     .mockResolvedValueOnce([savedTask]);
 });
 
 afterEach(() => {
   cleanup();
+});
+
+it("reloads the Inbox after task mutations and ignores an older Inbox response", async () => {
+  const initialInboxRequest = createDeferred<(typeof savedTask)[]>();
+  const subscribedInboxRequest = createDeferred<(typeof savedTask)[]>();
+  const eventInboxRequest = createDeferred<(typeof savedTask)[]>();
+  const unlisten = vi.fn();
+
+  invokeMock.mockReset();
+  listenMock.mockResolvedValue(unlisten);
+  invokeMock.mockImplementation((command) => {
+    if (command === "list_inbox") {
+      const requestCount = invokeMock.mock.calls.filter(([calledCommand]) => {
+        return calledCommand === "list_inbox";
+      }).length;
+
+      if (requestCount === 1) return initialInboxRequest.promise;
+      if (requestCount === 2) return subscribedInboxRequest.promise;
+      return eventInboxRequest.promise;
+    }
+
+    return Promise.resolve([]);
+  });
+
+  render(<App />);
+
+  await waitFor(() => {
+    expect(listenMock).toHaveBeenCalledWith("task://mutated", expect.any(Function));
+    expect(invokeMock.mock.calls.filter(([command]) => command === "list_inbox")).toHaveLength(2);
+  });
+
+  await act(async () => {
+    subscribedInboxRequest.resolve([]);
+  });
+
+  const mutationListener = listenMock.mock.calls[0]?.[1];
+  if (!mutationListener) {
+    throw new Error("Expected task mutation listener to be registered");
+  }
+
+  await act(async () => {
+    mutationListener({} as never);
+  });
+
+  expect(invokeMock.mock.calls.filter(([command]) => command === "list_inbox")).toHaveLength(3);
+
+  await act(async () => {
+    initialInboxRequest.resolve([savedTask]);
+  });
+
+  expect(screen.queryByText(savedTask.title)).not.toBeInTheDocument();
+
+  await act(async () => {
+    eventInboxRequest.resolve([]);
+  });
+
+  expect(await screen.findByText("No tasks in inbox.")).toBeInTheDocument();
+});
+
+it("reloads the active Today view after task mutations and ignores an older failure", async () => {
+  const initialTodayRequest = createDeferred<TaskSummaryDto[]>();
+  const eventTodayRequest = createDeferred<TaskSummaryDto[]>();
+  const unlisten = vi.fn();
+
+  invokeMock.mockReset();
+  listenMock.mockResolvedValue(unlisten);
+  invokeMock.mockImplementation((command, args) => {
+    if (command === "list_inbox") return Promise.resolve([]);
+    if (command === "list_tasks") {
+      const view = typeof args === "object" && args !== null && "view" in args ? args.view : null;
+      if (view && typeof view === "object" && "kind" in view && view.kind === "today") {
+        const requestCount = invokeMock.mock.calls.filter(([calledCommand, calledArgs]) => {
+          return (
+            calledCommand === "list_tasks" &&
+            typeof calledArgs === "object" &&
+            calledArgs !== null &&
+            "view" in calledArgs &&
+            typeof calledArgs.view === "object" &&
+            calledArgs.view !== null &&
+            "kind" in calledArgs.view &&
+            calledArgs.view.kind === "today"
+          );
+        }).length;
+
+        return requestCount === 1 ? initialTodayRequest.promise : eventTodayRequest.promise;
+      }
+    }
+
+    return Promise.resolve([]);
+  });
+  const user = userEvent.setup();
+
+  render(<App />);
+  await screen.findByText("No tasks in inbox.");
+  await user.click(screen.getByRole("button", { name: "Today" }));
+  await waitFor(() => {
+    expect(invokeMock).toHaveBeenCalledWith("list_tasks", { view: { kind: "today" } });
+  });
+
+  const mutationListener = listenMock.mock.calls[0]?.[1];
+  if (!mutationListener) {
+    throw new Error("Expected task mutation listener to be registered");
+  }
+
+  await act(async () => {
+    mutationListener({} as never);
+  });
+
+  await waitFor(() => {
+    expect(
+      invokeMock.mock.calls.filter(
+        ([command, args]) =>
+          command === "list_tasks" &&
+          typeof args === "object" &&
+          args !== null &&
+          "view" in args &&
+          typeof args.view === "object" &&
+          args.view !== null &&
+          "kind" in args.view &&
+          args.view.kind === "today",
+      ),
+    ).toHaveLength(2);
+  });
+
+  await act(async () => {
+    initialTodayRequest.reject({
+      code: "storage.unavailable",
+      message_key: "errors.storage.unavailable",
+    });
+  });
+
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+  await act(async () => {
+    eventTodayRequest.resolve([todaySummary]);
+  });
+
+  expect(await screen.findByText(todaySummary.title)).toBeInTheDocument();
+});
+
+it("keeps one active task mutation listener in StrictMode", async () => {
+  const firstUnlisten = vi.fn();
+  const secondUnlisten = vi.fn();
+  const listeners: Array<(event: never) => void> = [];
+
+  invokeMock.mockReset();
+  listenMock.mockImplementation(async (_event, listener) => {
+    listeners.push(listener as (event: never) => void);
+    return listeners.length === 1 ? firstUnlisten : secondUnlisten;
+  });
+  invokeMock.mockImplementation((command) => {
+    if (command === "list_inbox") return Promise.resolve([]);
+    return Promise.resolve([]);
+  });
+
+  render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  );
+
+  await waitFor(() => {
+    expect(listeners).toHaveLength(2);
+    expect(firstUnlisten).toHaveBeenCalledOnce();
+  });
+  const inboxRequestsBeforeEvent = invokeMock.mock.calls.filter(
+    ([command]) => command === "list_inbox",
+  ).length;
+
+  await act(async () => {
+    listeners[1]?.({} as never);
+  });
+
+  expect(invokeMock.mock.calls.filter(([command]) => command === "list_inbox")).toHaveLength(
+    inboxRequestsBeforeEvent + 1,
+  );
+});
+
+it("unlistens when task mutation listener registration finishes after unmount", async () => {
+  const registration = createDeferred<() => void>();
+
+  invokeMock.mockReset();
+  listenMock.mockReturnValue(registration.promise);
+  invokeMock.mockImplementation((command) => {
+    if (command === "list_inbox") return Promise.resolve([]);
+    return Promise.resolve([]);
+  });
+
+  const { unmount } = render(<App />);
+
+  await waitFor(() => {
+    expect(listenMock).toHaveBeenCalledWith("task://mutated", expect.any(Function));
+  });
+  const inboxRequestsBeforeUnmount = invokeMock.mock.calls.filter(
+    ([command]) => command === "list_inbox",
+  ).length;
+  unmount();
+
+  const unlisten = vi.fn();
+  await act(async () => {
+    registration.resolve(unlisten);
+  });
+
+  expect(unlisten).toHaveBeenCalledOnce();
+  expect(invokeMock.mock.calls.filter(([command]) => command === "list_inbox")).toHaveLength(
+    inboxRequestsBeforeUnmount,
+  );
+});
+
+it("refreshes an open editor when task mutation listener registration completes late", async () => {
+  const registration = createDeferred<() => void>();
+  const unlisten = vi.fn();
+  const user = userEvent.setup();
+
+  invokeMock.mockReset();
+  listenMock.mockReturnValue(registration.promise);
+  invokeMock.mockImplementation((command) => {
+    if (command === "list_inbox") return Promise.resolve([savedTask]);
+    if (command === "list_projects") return Promise.resolve([]);
+    if (command === "get_task_editor") return Promise.resolve(savedEditor);
+    return Promise.resolve(savedTask);
+  });
+
+  render(<App />);
+
+  await screen.findByText("Review schema");
+  await user.click(screen.getByRole("button", { name: "Edit task Review schema" }));
+  await screen.findByDisplayValue("Review schema");
+  expect(invokeMock.mock.calls.filter(([command]) => command === "get_task_editor")).toHaveLength(
+    1,
+  );
+
+  await act(async () => {
+    registration.resolve(unlisten);
+  });
+
+  await waitFor(() => {
+    expect(invokeMock.mock.calls.filter(([command]) => command === "get_task_editor")).toHaveLength(
+      2,
+    );
+  });
+});
+
+it("refreshes the selected project after task mutations", async () => {
+  const initialProjectRequest = createDeferred<TaskSummaryDto[]>();
+  const eventProjectRequest = createDeferred<TaskSummaryDto[]>();
+  const unlisten = vi.fn();
+  const user = userEvent.setup();
+  let projectRequestCount = 0;
+  const eventProjectTask: TaskSummaryDto = {
+    ...todaySummary,
+    id: "event-project-task",
+    projectName: "Release",
+    title: "Refreshed project task",
+  };
+
+  invokeMock.mockReset();
+  listenMock.mockResolvedValue(unlisten);
+  invokeMock.mockImplementation((command, args) => {
+    if (command === "list_inbox") return Promise.resolve([]);
+    if (command === "list_projects") return Promise.resolve([releaseProject]);
+    if (command === "list_tasks") {
+      const view = typeof args === "object" && args !== null && "view" in args ? args.view : null;
+      if (view && typeof view === "object" && "kind" in view && view.kind === "project") {
+        projectRequestCount += 1;
+        return projectRequestCount === 1
+          ? initialProjectRequest.promise
+          : eventProjectRequest.promise;
+      }
+    }
+
+    return Promise.resolve([]);
+  });
+
+  render(<App />);
+  await screen.findByText("No tasks in inbox.");
+  await user.click(screen.getByRole("button", { name: "Projects" }));
+  await user.click(await screen.findByRole("button", { name: "Release" }));
+  await waitFor(() => expect(projectRequestCount).toBe(1));
+
+  const mutationListener = listenMock.mock.calls[0]?.[1];
+  if (!mutationListener) {
+    throw new Error("Expected task mutation listener to be registered");
+  }
+
+  await act(async () => {
+    mutationListener({} as never);
+  });
+  await waitFor(() => expect(projectRequestCount).toBe(2));
+
+  await act(async () => {
+    initialProjectRequest.resolve([{ ...eventProjectTask, title: "Stale project task" }]);
+  });
+
+  expect(screen.queryByText("Stale project task")).not.toBeInTheDocument();
+
+  await act(async () => {
+    eventProjectRequest.resolve([eventProjectTask]);
+  });
+
+  expect(await screen.findByText("Refreshed project task")).toBeInTheDocument();
+});
+
+it("refreshes the current calendar month after task mutations and ignores older results", async () => {
+  const currentDate = new Date();
+  const currentMonth = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, "0")}`;
+  const nextDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1);
+  const nextMonth = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, "0")}`;
+  const currentMonthRequest = createDeferred<TaskSummaryDto[]>();
+  const nextMonthRequest = createDeferred<TaskSummaryDto[]>();
+  const eventMonthRequest = createDeferred<TaskSummaryDto[]>();
+  const unlisten = vi.fn();
+  const user = userEvent.setup();
+  let calendarRequestCount = 0;
+  const refreshedCalendarTask: TaskSummaryDto = {
+    ...todaySummary,
+    id: "event-calendar-task",
+    scheduledAt: `${nextMonth}-12T04:00:00.000Z`,
+    title: "Refreshed calendar task",
+  };
+
+  invokeMock.mockReset();
+  listenMock.mockResolvedValue(unlisten);
+  invokeMock.mockImplementation((command, args) => {
+    if (command === "list_inbox") return Promise.resolve([]);
+    if (command === "list_tasks") {
+      const view = typeof args === "object" && args !== null && "view" in args ? args.view : null;
+      if (view && typeof view === "object" && "kind" in view && view.kind === "calendar") {
+        calendarRequestCount += 1;
+        if (calendarRequestCount === 1) return currentMonthRequest.promise;
+        if (calendarRequestCount === 2) return nextMonthRequest.promise;
+        return eventMonthRequest.promise;
+      }
+    }
+
+    return Promise.resolve([]);
+  });
+
+  render(<App />);
+  await screen.findByText("No tasks in inbox.");
+  await user.click(screen.getByRole("button", { name: "Calendar" }));
+  await waitFor(() => {
+    expect(invokeMock).toHaveBeenCalledWith("list_tasks", {
+      view: { kind: "calendar", month: currentMonth },
+    });
+  });
+  await user.click(screen.getByRole("button", { name: "Next month" }));
+  await waitFor(() => {
+    expect(invokeMock).toHaveBeenCalledWith("list_tasks", {
+      view: { kind: "calendar", month: nextMonth },
+    });
+  });
+
+  const mutationListener = listenMock.mock.calls[0]?.[1];
+  if (!mutationListener) {
+    throw new Error("Expected task mutation listener to be registered");
+  }
+
+  await act(async () => {
+    mutationListener({} as never);
+  });
+  await waitFor(() => {
+    expect(calendarRequestCount).toBe(3);
+    expect(invokeMock).toHaveBeenLastCalledWith("list_tasks", {
+      view: { kind: "calendar", month: nextMonth },
+    });
+  });
+
+  await act(async () => {
+    currentMonthRequest.resolve([{ ...refreshedCalendarTask, title: "Stale current month task" }]);
+    nextMonthRequest.reject({
+      code: "storage.unavailable",
+      message_key: "errors.storage.unavailable",
+    });
+  });
+
+  expect(screen.queryByText("Stale current month task")).not.toBeInTheDocument();
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+  await act(async () => {
+    eventMonthRequest.resolve([refreshedCalendarTask]);
+  });
+
+  expect(await screen.findByText("Refreshed calendar task")).toBeInTheDocument();
+});
+
+it("logs a rejected task mutation subscription without breaking the App", async () => {
+  const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+  invokeMock.mockReset();
+  listenMock.mockRejectedValue(new Error("event unavailable"));
+  invokeMock.mockImplementation((command) => {
+    if (command === "list_inbox") return Promise.resolve([]);
+    return Promise.resolve([]);
+  });
+
+  render(<App />);
+
+  expect(await screen.findByText("No tasks in inbox.")).toBeInTheDocument();
+  await waitFor(() => expect(consoleError).toHaveBeenCalledOnce());
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  consoleError.mockRestore();
+});
+
+it("refreshes an open editor from any task mutation event", async () => {
+  const externallyChangedTask = {
+    ...savedTask,
+    revision: 2,
+    title: "Review external migration",
+    updatedAt: "2026-08-27T02:00:00Z",
+  };
+  const externallyChangedEditor = {
+    subtasks: [{ ...savedTask, id: "subtask-1", title: "Verify external migration" }],
+    tagNames: ["external-change"],
+    task: externallyChangedTask,
+  };
+  const unlisten = vi.fn();
+  const user = userEvent.setup();
+
+  invokeMock.mockReset();
+  listenMock.mockResolvedValue(unlisten);
+  invokeMock.mockImplementation((command) => {
+    if (command === "list_inbox") return Promise.resolve([savedTask]);
+    if (command === "list_projects") return Promise.resolve([]);
+    if (command === "get_task_editor") {
+      const editorRequestCount = invokeMock.mock.calls.filter(([calledCommand]) => {
+        return calledCommand === "get_task_editor";
+      }).length;
+
+      return Promise.resolve(editorRequestCount === 1 ? savedEditor : externallyChangedEditor);
+    }
+    if (command === "update_task_editor") return Promise.resolve(externallyChangedEditor);
+    return Promise.resolve(savedTask);
+  });
+
+  render(<App />);
+
+  await screen.findByText("Review schema");
+  await user.click(screen.getByRole("button", { name: "Edit task Review schema" }));
+  await screen.findByDisplayValue("Review schema");
+
+  const mutationListener = listenMock.mock.calls[0]?.[1];
+  if (!mutationListener) {
+    throw new Error("Expected task mutation listener to be registered");
+  }
+
+  await act(async () => {
+    mutationListener({} as never);
+  });
+
+  await waitFor(() => {
+    expect(invokeMock.mock.calls.filter(([command]) => command === "get_task_editor")).toHaveLength(
+      2,
+    );
+  });
+  expect(await screen.findByDisplayValue("Review external migration")).toBeInTheDocument();
+  expect(screen.getByText("external-change")).toBeInTheDocument();
+  expect(
+    screen.getByRole("checkbox", { name: "Complete task Verify external migration" }),
+  ).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "Update task" }));
+
+  expect(invokeMock).toHaveBeenCalledWith(
+    "update_task_editor",
+    expect.objectContaining({ expectedRevision: 2, id: savedTask.id }),
+  );
 });
 
 it("refreshes the inbox with the saved task", async () => {
@@ -152,8 +640,17 @@ it("refreshes the inbox with the saved task", async () => {
   expect(await screen.findByText("Review schema")).toBeInTheDocument();
   expect(invokeMock).toHaveBeenNthCalledWith(1, "list_inbox");
   expect(invokeMock).toHaveBeenNthCalledWith(2, "list_projects");
-  expect(invokeMock).toHaveBeenNthCalledWith(3, "create_task", {
-    draft: { title: "Review schema", note: "" },
+  expect(invokeMock).toHaveBeenNthCalledWith(3, "create_task_editor", {
+    draft: {
+      dueAt: null,
+      note: "",
+      priority: "Normal",
+      projectId: null,
+      recurrence: null,
+      scheduledAt: null,
+      title: "Review schema",
+    },
+    tagNames: [],
   });
   expect(invokeMock).toHaveBeenNthCalledWith(4, "list_inbox");
 });
@@ -165,7 +662,8 @@ it("edits an existing task and renders the refreshed result", async () => {
   invokeMock
     .mockResolvedValueOnce([savedTask])
     .mockResolvedValueOnce([])
-    .mockResolvedValueOnce(updatedTask)
+    .mockResolvedValueOnce(savedEditor)
+    .mockResolvedValueOnce(updatedEditor)
     .mockResolvedValueOnce([updatedTask]);
 
   render(<App />);
@@ -180,11 +678,111 @@ it("edits an existing task and renders the refreshed result", async () => {
   await user.type(noteInput, "Add migration result");
   await user.click(screen.getByRole("button", { name: "Update task" }));
 
-  expect(invokeMock).toHaveBeenCalledWith("update_task", {
+  expect(invokeMock).toHaveBeenCalledWith("update_task_editor", {
+    expectedRevision: 1,
     id: "task-1",
-    patch: { title: "Review release", note: "Add migration result" },
+    patch: {
+      dueAt: null,
+      note: "Add migration result",
+      priority: "Normal",
+      projectId: null,
+      recurrence: null,
+      scheduledAt: null,
+      title: "Review release",
+    },
+    tagNames: [],
   });
   expect(await screen.findByText("Review release")).toBeInTheDocument();
+});
+
+it("keeps the newer editor open when an earlier editor save resolves late", async () => {
+  const secondTask = {
+    ...savedTask,
+    id: "task-2",
+    title: "Prepare demo",
+  };
+  const secondEditor = {
+    ...savedEditor,
+    task: secondTask,
+  };
+  const saveFirstEditor = createDeferred<typeof savedEditor>();
+  invokeMock.mockReset();
+  invokeMock.mockImplementation((command, args) => {
+    if (command === "list_inbox") return Promise.resolve([savedTask, secondTask]);
+    if (command === "list_projects") return Promise.resolve([]);
+    if (command === "get_task_editor") {
+      const taskId = typeof args === "object" && args !== null && "id" in args ? args.id : null;
+      return Promise.resolve(taskId === "task-2" ? secondEditor : savedEditor);
+    }
+    if (command === "update_task_editor") return saveFirstEditor.promise;
+    return Promise.resolve(savedTask);
+  });
+  const user = userEvent.setup();
+
+  render(<App />);
+
+  await screen.findByText("Review schema");
+  await user.click(screen.getByRole("button", { name: "Edit task Review schema" }));
+  await screen.findByDisplayValue("Review schema");
+  await user.click(screen.getByRole("button", { name: "Update task" }));
+  await user.click(screen.getByRole("button", { name: "Edit task Prepare demo" }));
+  expect(await screen.findByDisplayValue("Prepare demo")).toBeInTheDocument();
+
+  await act(async () => {
+    saveFirstEditor.resolve(savedEditor);
+  });
+
+  expect(screen.getByDisplayValue("Prepare demo")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Update task" })).toBeInTheDocument();
+});
+
+it("does not reload or close a newer editor after an earlier subtask completion resolves late", async () => {
+  const secondTask = {
+    ...savedTask,
+    id: "task-2",
+    title: "Prepare demo",
+  };
+  const firstEditor = {
+    ...savedEditor,
+    subtasks: [{ ...savedTask, id: "subtask-1", title: "Confirm owners" }],
+  };
+  const secondEditor = {
+    ...savedEditor,
+    task: secondTask,
+  };
+  const completeFirstSubtask = createDeferred<typeof savedTask>();
+  invokeMock.mockReset();
+  invokeMock.mockImplementation((command, args) => {
+    if (command === "list_inbox") return Promise.resolve([savedTask, secondTask]);
+    if (command === "list_projects") return Promise.resolve([]);
+    if (command === "get_task_editor") {
+      const taskId = typeof args === "object" && args !== null && "id" in args ? args.id : null;
+      return Promise.resolve(taskId === "task-2" ? secondEditor : firstEditor);
+    }
+    if (command === "complete_task") return completeFirstSubtask.promise;
+    return Promise.resolve(savedTask);
+  });
+  const user = userEvent.setup();
+
+  render(<App />);
+
+  await screen.findByText("Review schema");
+  await user.click(screen.getByRole("button", { name: "Edit task Review schema" }));
+  await screen.findByRole("checkbox", { name: "Complete task Confirm owners" });
+  await user.click(screen.getByRole("checkbox", { name: "Complete task Confirm owners" }));
+  await user.click(screen.getByRole("button", { name: "Edit task Prepare demo" }));
+  expect(await screen.findByDisplayValue("Prepare demo")).toBeInTheDocument();
+
+  await act(async () => {
+    completeFirstSubtask.resolve(savedTask);
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  expect(screen.getByDisplayValue("Prepare demo")).toBeInTheDocument();
+  expect(invokeMock.mock.calls.filter(([command]) => command === "get_task_editor")).toHaveLength(
+    2,
+  );
 });
 
 it("renders the Inbox ledger and real overview from one inbox request", async () => {
@@ -381,10 +979,7 @@ it("completes a selected project task and refreshes only that project ledger", a
 
   await user.click(screen.getByRole("button", { name: "Complete task Publish release notes" }));
 
-  expect(invokeMock).toHaveBeenCalledWith("update_task", {
-    id: "release-task",
-    patch: { completedAt: expect.any(String) },
-  });
+  expect(invokeMock).toHaveBeenCalledWith("complete_task", { id: "release-task" });
   await screen.findByText("No tasks in this view.");
   expect(invokeMock).toHaveBeenLastCalledWith("list_tasks", {
     view: { kind: "project", projectId: "project-1" },
@@ -499,7 +1094,7 @@ it("uses the project and selected-project headings instead of a generic project 
   await user.click(screen.getByRole("button", { name: "Projects" }));
 
   expect(await screen.findByRole("heading", { name: "Projects" })).toBeInTheDocument();
-  expect(screen.queryByRole("heading", { name: "Todo" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "TaskDock" })).not.toBeInTheDocument();
 });
 
 it("does not expose a selected project's storage identifier in the workspace metadata", async () => {
@@ -845,10 +1440,7 @@ it("persists completion before rendering the refreshed empty inbox", async () =>
   await screen.findByText("Review schema");
   await user.click(screen.getByRole("checkbox", { name: "Complete task task-1" }));
 
-  expect(invokeMock).toHaveBeenCalledWith("update_task", {
-    id: "task-1",
-    patch: { completedAt: expect.any(String) },
-  });
+  expect(invokeMock).toHaveBeenCalledWith("complete_task", { id: "task-1" });
   expect(await screen.findByText("No tasks in inbox.")).toBeInTheDocument();
 });
 
@@ -904,13 +1496,13 @@ it("restores a completed task and shows it again in the inbox", async () => {
   expect(invokeMock).toHaveBeenLastCalledWith("list_inbox");
 });
 
-it("keeps completion unchecked and reports a structured update failure", async () => {
+it("keeps completion unchecked and reports a structured already-completed failure", async () => {
   const user = userEvent.setup();
 
   invokeMock.mockReset();
   invokeMock.mockResolvedValueOnce([savedTask]).mockRejectedValueOnce({
-    code: "storage.unavailable",
-    message_key: "errors.storage.unavailable",
+    code: "task.already_completed",
+    message_key: "errors.task.already_completed",
   });
 
   render(<App />);
@@ -920,13 +1512,8 @@ it("keeps completion unchecked and reports a structured update failure", async (
   });
   await user.click(completionCheckbox);
 
-  expect(invokeMock).toHaveBeenCalledWith("update_task", {
-    id: "task-1",
-    patch: { completedAt: expect.any(String) },
-  });
-  expect(await screen.findByRole("alert")).toHaveTextContent(
-    "Local storage is temporarily unavailable",
-  );
+  expect(invokeMock).toHaveBeenCalledWith("complete_task", { id: "task-1" });
+  expect(await screen.findByRole("alert")).toHaveTextContent("This task is already completed.");
   expect(completionCheckbox).not.toBeChecked();
 });
 
@@ -1243,6 +1830,180 @@ it("does not query blank search input and ignores a deferred result after closin
 
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   expect(screen.queryByText("Completed-only task")).not.toBeInTheDocument();
+});
+
+it("opens global search with Meta+K", async () => {
+  render(<App />);
+
+  await screen.findByText("No tasks in inbox.");
+
+  act(() => {
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", { bubbles: true, key: "k", metaKey: true }),
+    );
+  });
+
+  expect(screen.getByRole("searchbox", { name: "Search tasks" })).toHaveFocus();
+});
+
+it("keeps only the latest search response after the query changes", async () => {
+  const firstSearchRequest = createDeferred<TaskSummaryDto[]>();
+  const secondSearchRequest = createDeferred<TaskSummaryDto[]>();
+
+  invokeMock.mockReset();
+  invokeMock
+    .mockResolvedValueOnce([])
+    .mockImplementationOnce(() => firstSearchRequest.promise)
+    .mockImplementationOnce(() => secondSearchRequest.promise);
+
+  render(<App />);
+  await screen.findByText("No tasks in inbox.");
+
+  vi.useFakeTimers();
+
+  try {
+    act(() => {
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", { bubbles: true, ctrlKey: true, key: "k" }),
+      );
+    });
+
+    const input = screen.getByRole("searchbox", { name: "Search tasks" });
+    fireEvent.change(input, { target: { value: "release" } });
+
+    await act(async () => {
+      vi.advanceTimersByTime(200);
+      await Promise.resolve();
+    });
+
+    expect(invokeMock).toHaveBeenLastCalledWith("list_tasks", {
+      view: { kind: "search", query: "release" },
+    });
+
+    fireEvent.change(input, { target: { value: "schema" } });
+
+    await act(async () => {
+      vi.advanceTimersByTime(200);
+      await Promise.resolve();
+    });
+
+    expect(invokeMock).toHaveBeenLastCalledWith("list_tasks", {
+      view: { kind: "search", query: "schema" },
+    });
+
+    await act(async () => {
+      firstSearchRequest.resolve([completedSummary]);
+    });
+
+    expect(screen.queryByText("Completed-only task")).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+    await act(async () => {
+      secondSearchRequest.resolve([todaySummary]);
+    });
+
+    expect(screen.getByText("Today-only task")).toBeInTheDocument();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("ignores an older search failure after the query changes", async () => {
+  const firstSearchRequest = createDeferred<TaskSummaryDto[]>();
+  const secondSearchRequest = createDeferred<TaskSummaryDto[]>();
+
+  invokeMock.mockReset();
+  invokeMock
+    .mockResolvedValueOnce([])
+    .mockImplementationOnce(() => firstSearchRequest.promise)
+    .mockImplementationOnce(() => secondSearchRequest.promise);
+
+  render(<App />);
+  await screen.findByText("No tasks in inbox.");
+
+  vi.useFakeTimers();
+
+  try {
+    act(() => {
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", { bubbles: true, ctrlKey: true, key: "k" }),
+      );
+    });
+
+    const input = screen.getByRole("searchbox", { name: "Search tasks" });
+    fireEvent.change(input, { target: { value: "release" } });
+
+    await act(async () => {
+      vi.advanceTimersByTime(200);
+      await Promise.resolve();
+    });
+
+    fireEvent.change(input, { target: { value: "schema" } });
+
+    await act(async () => {
+      vi.advanceTimersByTime(200);
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      firstSearchRequest.reject({
+        code: "storage.unavailable",
+        message_key: "errors.storage.unavailable",
+      });
+    });
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+    await act(async () => {
+      secondSearchRequest.resolve([todaySummary]);
+    });
+
+    expect(screen.getByText("Today-only task")).toBeInTheDocument();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("ignores a deferred search failure after closing", async () => {
+  const searchRequest = createDeferred<TaskSummaryDto[]>();
+
+  invokeMock.mockReset();
+  invokeMock.mockResolvedValueOnce([]).mockImplementationOnce(() => searchRequest.promise);
+
+  render(<App />);
+  await screen.findByText("No tasks in inbox.");
+
+  vi.useFakeTimers();
+
+  try {
+    act(() => {
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", { bubbles: true, ctrlKey: true, key: "k" }),
+      );
+    });
+
+    const input = screen.getByRole("searchbox", { name: "Search tasks" });
+    fireEvent.change(input, { target: { value: "release" } });
+
+    await act(async () => {
+      vi.advanceTimersByTime(200);
+      await Promise.resolve();
+    });
+
+    fireEvent.keyDown(input, { key: "Escape" });
+
+    await act(async () => {
+      searchRequest.reject({
+        code: "storage.unavailable",
+        message_key: "errors.storage.unavailable",
+      });
+    });
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it("renders translated navigation and editor controls for a Chinese browser language", async () => {

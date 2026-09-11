@@ -16,6 +16,7 @@ const savedTask: TaskDto = {
   scheduledAt: null,
   title: "Review schema",
   updatedAt: "2026-08-27T00:00:00Z",
+  revision: 1,
 };
 
 it("renders a loaded inbox task as a ledger row with an icon-only edit action", () => {
