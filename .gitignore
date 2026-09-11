@@ -20,6 +20,7 @@ dist-ssr
 .env.*
 !.env.example
 docs/handoffs/
+docs/superpowers/
 .superpowers/
 coverage/
 playwright-report/
