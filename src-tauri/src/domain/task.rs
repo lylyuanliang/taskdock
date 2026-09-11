@@ -33,6 +33,7 @@ pub struct Task {
     pub monthly_anchor_day: Option<u8>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub revision: i64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -48,10 +49,6 @@ pub struct TaskDraft {
 }
 
 impl TaskDraft {
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "M2 快速新增任务工作流接入前保留默认草稿工厂")
-    )]
     pub fn new(title: String) -> Result<Self, AppError> {
         let title = validate_title(title)?;
 
@@ -79,6 +76,13 @@ pub struct TaskPatch {
     pub due_at: Option<Option<DateTime<Utc>>>,
     pub completed_at: Option<Option<DateTime<Utc>>>,
     pub recurrence: Option<Option<RecurrenceRule>>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReminderClaimStateUpdate {
+    Preserve,
+    Clear,
+    ClearIfStoredScheduleDiffers,
 }
 
 impl Task {
@@ -115,11 +119,13 @@ impl Task {
             monthly_anchor_day,
             created_at: now,
             updated_at: now,
+            revision: 1,
         })
     }
 
     pub fn apply_patch(&self, patch: TaskPatch) -> Result<Self, AppError> {
         let mut task = self.clone();
+        let reminder_claim_state_update = self.reminder_claim_state_update_for_patch(&patch);
 
         if let Some(title) = patch.title {
             task.title = validate_title(title)?;
@@ -146,10 +152,15 @@ impl Task {
             task.completed_at = completed_at;
         }
         if let Some(recurrence) = patch.recurrence {
-            if let Some(rule) = recurrence.as_ref() {
-                rule.validate_new_task()?;
+            if recurrence != self.recurrence {
+                if let Some(rule) = recurrence.as_ref() {
+                    rule.validate_new_task()?;
+                }
             }
             task.recurrence = recurrence;
+        }
+        if reminder_claim_state_update != ReminderClaimStateUpdate::Preserve {
+            task.reminder_sent_at = None;
         }
 
         validate_recurrence(task.recurrence.as_ref(), task.scheduled_at, task.parent_id)?;
@@ -166,8 +177,44 @@ impl Task {
         }
 
         task.updated_at = Utc::now();
+        task.increment_revision()?;
 
         Ok(task)
+    }
+
+    pub(crate) fn increment_revision(&mut self) -> Result<(), AppError> {
+        self.revision = self.revision.checked_add(1).ok_or_else(|| {
+            AppError::new(
+                "task.revision.overflow",
+                "errors.task.revision.overflow",
+                AppErrorKind::Internal,
+            )
+        })?;
+
+        Ok(())
+    }
+
+    pub(crate) fn reminder_claim_state_update_for_patch(
+        &self,
+        patch: &TaskPatch,
+    ) -> ReminderClaimStateUpdate {
+        let clears_reminder_claim_state = patch
+            .scheduled_at
+            .as_ref()
+            .is_some_and(|scheduled_at| scheduled_at != &self.scheduled_at)
+            || (self.completed_at.is_some()
+                && patch
+                    .completed_at
+                    .as_ref()
+                    .is_some_and(|completed_at| completed_at.is_none()));
+
+        match patch.scheduled_at {
+            Some(scheduled_at) if scheduled_at != self.scheduled_at => {
+                ReminderClaimStateUpdate::ClearIfStoredScheduleDiffers
+            }
+            _ if clears_reminder_claim_state => ReminderClaimStateUpdate::Clear,
+            _ => ReminderClaimStateUpdate::Preserve,
+        }
     }
 
     #[cfg(test)]

@@ -139,23 +139,16 @@ impl<'de> Deserialize<'de> for RecurrenceRule {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "M2 完成任务用例接入前保留领域完成结果")
-)]
 pub struct TaskCompletion {
     pub completed_task: Task,
     pub next_task: Option<Task>,
 }
 
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "M2 完成任务用例接入前保留纯领域完成转换")
-)]
 pub fn complete_task(task: &Task, completed_at: DateTime<Utc>) -> Result<TaskCompletion, AppError> {
     let mut completed_task = task.clone();
     completed_task.completed_at = Some(completed_at);
     completed_task.updated_at = completed_at;
+    completed_task.increment_revision()?;
 
     let next_task = task
         .recurrence
@@ -170,10 +163,6 @@ pub fn complete_task(task: &Task, completed_at: DateTime<Utc>) -> Result<TaskCom
     })
 }
 
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "仅由待接入的完成任务领域转换调用")
-)]
 fn next_instance(
     task: &Task,
     rule: &RecurrenceRule,
@@ -220,6 +209,7 @@ fn next_instance(
     next_task.instance_number = instance_number;
     next_task.created_at = completed_at;
     next_task.updated_at = completed_at;
+    next_task.revision = 1;
     if rule.uses_date_anchor() && next_task.monthly_anchor_day.is_none() {
         next_task.monthly_anchor_day = Some(scheduled_at.day() as u8);
     }
@@ -227,10 +217,6 @@ fn next_instance(
     Ok(Some(next_task))
 }
 
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "仅由待接入的完成任务领域转换调用")
-)]
 fn advance_scheduled_at(
     scheduled_at: DateTime<Utc>,
     rule: &RecurrenceRule,
@@ -261,10 +247,6 @@ fn advance_scheduled_at(
     }
 }
 
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "仅由待接入的完成任务领域转换调用")
-)]
 fn add_days(scheduled_at: DateTime<Utc>, days: i64) -> Result<DateTime<Utc>, AppError> {
     scheduled_at
         .checked_add_signed(Duration::days(days))
@@ -276,10 +258,6 @@ fn add_days(scheduled_at: DateTime<Utc>, days: i64) -> Result<DateTime<Utc>, App
         })
 }
 
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "仅由待接入的完成任务领域转换调用")
-)]
 fn advance_months(
     scheduled_at: DateTime<Utc>,
     interval: u32,
@@ -326,10 +304,6 @@ fn advance_months(
     ))
 }
 
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "仅由待接入的完成任务领域转换调用")
-)]
 fn last_day_of_month(year: i32, month: u32) -> u32 {
     (28..=31)
         .rev()
