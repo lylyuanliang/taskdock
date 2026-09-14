@@ -166,11 +166,63 @@ describe("QuickPanel", () => {
     await user.click(screen.getByRole("button", { name: "Open quick panel" }));
     expect(screen.getByText(openTodayTask.title)).toBeVisible();
 
-    await user.click(screen.getByRole("button", { name: "Close quick panel" }));
+    await user.click(screen.getByRole("button", { name: "Collapse quick panel" }));
     expect(screen.queryByText(openTodayTask.title)).not.toBeInTheDocument();
   });
 
-  it("exposes a draggable header and an X close control when expanded", async () => {
+  it("opens the main window from the expanded header without starting a drag", async () => {
+    const user = userEvent.setup();
+    const onOpenMainWindow = vi.fn().mockResolvedValue(undefined);
+    const startDragging = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(getCurrentWindow).mockReturnValue({
+      startDragging,
+    } as unknown as ReturnType<typeof getCurrentWindow>);
+
+    render(
+      <QuickPanel
+        behavior="click"
+        onComplete={vi.fn()}
+        onCreate={vi.fn()}
+        onModeChange={vi.fn().mockResolvedValue(undefined)}
+        onOpenMainWindow={onOpenMainWindow}
+        tasks={[openTodayTask]}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Open quick panel" }));
+    await user.click(screen.getByRole("button", { name: "Open main window" }));
+
+    expect(onOpenMainWindow).toHaveBeenCalledOnce();
+    expect(startDragging).not.toHaveBeenCalled();
+  });
+
+  it("exits the application from the expanded header without starting a drag", async () => {
+    const user = userEvent.setup();
+    const onExitApp = vi.fn().mockResolvedValue(undefined);
+    const startDragging = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(getCurrentWindow).mockReturnValue({
+      startDragging,
+    } as unknown as ReturnType<typeof getCurrentWindow>);
+
+    render(
+      <QuickPanel
+        behavior="click"
+        onComplete={vi.fn()}
+        onCreate={vi.fn()}
+        onExitApp={onExitApp}
+        onModeChange={vi.fn().mockResolvedValue(undefined)}
+        tasks={[openTodayTask]}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Open quick panel" }));
+    await user.click(screen.getByRole("button", { name: "Exit TaskDock" }));
+
+    expect(onExitApp).toHaveBeenCalledOnce();
+    expect(startDragging).not.toHaveBeenCalled();
+  });
+
+  it("exposes a draggable header and a directional collapse control when expanded", async () => {
     const user = userEvent.setup();
 
     render(
@@ -186,11 +238,11 @@ describe("QuickPanel", () => {
     await user.click(screen.getByRole("button", { name: "Open quick panel" }));
 
     const dragHeader = screen.getByLabelText("Move quick panel");
-    const closeButton = screen.getByRole("button", { name: "Close quick panel" });
+    const collapseButton = screen.getByRole("button", { name: "Collapse quick panel" });
 
     expect(dragHeader).toHaveAttribute("title", "Move quick panel");
     expect(dragHeader.querySelector("svg")).toHaveClass("lucide-grip-horizontal");
-    expect(closeButton.querySelector("svg")).toHaveClass("lucide-x");
+    expect(collapseButton.querySelector("svg")).toHaveClass("lucide-chevron-up");
   });
 
   it("completes an open Today task through the supplied real task callback", async () => {
@@ -324,6 +376,29 @@ describe("QuickPanel", () => {
       "Local storage is temporarily unavailable",
     );
     expect(screen.queryByText(openTodayTask.title)).not.toBeInTheDocument();
+  });
+
+  it("layers a command error outside the expanded panel's normal content layout", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <QuickPanel
+        behavior="click"
+        errorMessageKey="errors.storage.unavailable"
+        onComplete={vi.fn()}
+        onCreate={vi.fn()}
+        onModeChange={vi.fn().mockResolvedValue(undefined)}
+        tasks={[openTodayTask]}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Open quick panel" }));
+
+    const alert = screen.getByRole("alert");
+    const errorStyle = window.getComputedStyle(alert);
+
+    expect(errorStyle.position).toBe("absolute");
+    expect(errorStyle.bottom).toBe("48px");
   });
 
   it("retains failed capture input and blocks duplicate create submissions", async () => {

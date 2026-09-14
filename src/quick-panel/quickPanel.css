@@ -90,14 +90,19 @@ input {
 }
 
 .quick-panel__error {
+  background: var(--color-surface-high);
+  border: 1px solid var(--color-danger);
+  bottom: 48px;
   color: var(--color-danger);
   font-size: 12px;
+  left: 8px;
   margin: 0;
   overflow-wrap: anywhere;
-  padding: 4px 48px 4px 8px;
+  padding: 4px 8px;
   pointer-events: none;
-  position: relative;
-  z-index: 1;
+  position: absolute;
+  right: 8px;
+  z-index: 2;
 }
 
 .quick-panel__content {
@@ -115,7 +120,35 @@ input {
   font-size: 12px;
   gap: 6px;
   min-height: 40px;
-  padding: 0 52px 0 10px;
+  padding: 0 118px 0 10px;
+  position: relative;
+}
+
+.quick-panel__header-action {
+  align-items: center;
+  background: var(--color-transparent);
+  border: 0;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  display: flex;
+  height: 32px;
+  justify-content: center;
+  padding: 0;
+  position: absolute;
+  right: 44px;
+  top: 4px;
+  width: 32px;
+}
+
+.quick-panel__header-action:hover,
+.quick-panel__header-action:focus-visible {
+  color: var(--color-accent);
+  outline: 1px solid var(--color-accent);
+  outline-offset: -1px;
+}
+
+.quick-panel__header-action--exit {
+  right: 78px;
 }
 
 .quick-panel__tasks {

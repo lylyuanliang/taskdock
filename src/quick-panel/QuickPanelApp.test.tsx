@@ -55,6 +55,42 @@ describe("QuickPanelApp", () => {
     vi.useRealTimers();
   });
 
+  it("invokes the main window command from the expanded panel header", async () => {
+    const user = userEvent.setup();
+    const invokeMock = vi.mocked(invoke);
+
+    invokeMock.mockImplementation((command) => {
+      if (command === "get_quick_panel_behavior") return Promise.resolve("click");
+      if (command === "list_tasks") return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    });
+
+    render(<QuickPanelApp />);
+
+    await user.click(await screen.findByRole("button", { name: "Open quick panel" }));
+    await user.click(screen.getByRole("button", { name: "Open main window" }));
+
+    expect(invokeMock).toHaveBeenCalledWith("open_main_window");
+  });
+
+  it("invokes the exit command from the expanded panel header", async () => {
+    const user = userEvent.setup();
+    const invokeMock = vi.mocked(invoke);
+
+    invokeMock.mockImplementation((command) => {
+      if (command === "get_quick_panel_behavior") return Promise.resolve("click");
+      if (command === "list_tasks") return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    });
+
+    render(<QuickPanelApp />);
+
+    await user.click(await screen.findByRole("button", { name: "Open quick panel" }));
+    await user.click(screen.getByRole("button", { name: "Exit TaskDock" }));
+
+    expect(invokeMock).toHaveBeenCalledWith("exit_app");
+  });
+
   it("reloads Today after task mutations and keeps a newer event response over initialization", async () => {
     const initialRequest = deferred<TaskSummaryDto[]>();
     const subscriptionRefreshRequest = deferred<TaskSummaryDto[]>();

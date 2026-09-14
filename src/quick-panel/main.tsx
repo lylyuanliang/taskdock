@@ -118,6 +118,14 @@ export function QuickPanelApp() {
     await invoke("set_quick_panel_mode", { mode });
   }
 
+  async function handleOpenMainWindow() {
+    await invoke("open_main_window");
+  }
+
+  async function handleExitApp() {
+    await invoke("exit_app");
+  }
+
   async function handleComplete(id: string) {
     await completeTask(id);
     await reloadTasks();
@@ -134,7 +142,9 @@ export function QuickPanelApp() {
       errorMessageKey={behaviorErrorMessageKey ?? taskErrorMessageKey}
       onComplete={handleComplete}
       onCreate={handleCreate}
+      onExitApp={handleExitApp}
       onModeChange={handleModeChange}
+      onOpenMainWindow={handleOpenMainWindow}
       tasks={tasks}
     />
   );

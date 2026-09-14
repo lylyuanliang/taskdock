@@ -4,6 +4,8 @@ pub(crate) mod error;
 
 pub(crate) mod infrastructure;
 
+pub(crate) mod main_window;
+
 pub(crate) mod commands;
 
 pub(crate) mod quick_panel;
@@ -41,6 +43,7 @@ use domain::{
     project_service::ProjectService, reminders::ReminderScheduler, task_service::TaskService,
 };
 use infrastructure::sqlite::SqliteTaskRepository;
+use main_window::{exit_app, open_main_window, open_main_window_for_app};
 use quick_panel::{
     build_quick_panel, get_quick_panel_behavior, set_quick_panel_behavior, set_quick_panel_mode,
     QuickPanelNativeState,
@@ -83,8 +86,21 @@ impl Drop for AppState {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() -> tauri::Result<()> {
-    let app = tauri::Builder::default()
-        .plugin(tauri_plugin_notification::init())
+    let mut builder = tauri::Builder::default().plugin(tauri_plugin_notification::init());
+
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(error) = open_main_window_for_app(app).await {
+                    eprintln!("unable to open the existing main window: {error}");
+                }
+            });
+        }));
+    }
+
+    let app = builder
         .setup(|app| {
             app.manage(AppState::open(app.handle())?);
             let quick_panel_state = QuickPanelNativeState::open(&app.path().app_data_dir()?)?;
@@ -107,6 +123,8 @@ pub fn run() -> tauri::Result<()> {
             create_project,
             rename_project,
             archive_project,
+            exit_app,
+            open_main_window,
             set_quick_panel_mode,
             set_quick_panel_behavior,
             get_quick_panel_behavior

@@ -1,4 +1,12 @@
-import { CheckCircle2, Circle, GripHorizontal, GripVertical, X } from "lucide-react";
+import {
+  CheckCircle2,
+  ChevronUp,
+  Circle,
+  GripHorizontal,
+  GripVertical,
+  PanelTopOpen,
+  Power,
+} from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { FocusEvent, FormEvent, MouseEvent, useEffect, useRef, useState } from "react";
 import {
@@ -17,6 +25,8 @@ interface QuickPanelProps {
   onComplete: (id: string) => Promise<void> | void;
   onCreate: (draft: TaskDraftInput) => Promise<void> | void;
   onModeChange: (mode: QuickPanelMode) => Promise<void> | void;
+  onExitApp?: () => Promise<void> | void;
+  onOpenMainWindow?: () => Promise<void> | void;
   tasks: TaskSummaryDto[];
 }
 
@@ -33,6 +43,8 @@ export function QuickPanel({
   onComplete,
   onCreate,
   onModeChange,
+  onExitApp,
+  onOpenMainWindow,
   tasks,
 }: QuickPanelProps) {
   const [completedPendingIds, setCompletedPendingIds] = useState<Set<string>>(new Set());
@@ -178,6 +190,34 @@ export function QuickPanel({
     }
   }
 
+  async function handleOpenMainWindow() {
+    if (!onOpenMainWindow) {
+      return;
+    }
+
+    setLocalErrorMessageKey(null);
+
+    try {
+      await onOpenMainWindow();
+    } catch (error: unknown) {
+      setLocalErrorMessageKey(getCommandErrorMessageKey(error));
+    }
+  }
+
+  async function handleExitApp() {
+    if (!onExitApp) {
+      return;
+    }
+
+    setLocalErrorMessageKey(null);
+
+    try {
+      await onExitApp();
+    } catch (error: unknown) {
+      setLocalErrorMessageKey(getCommandErrorMessageKey(error));
+    }
+  }
+
   async function handleComplete(id: string) {
     if (completedPendingIdsRef.current.has(id)) {
       return;
@@ -198,7 +238,7 @@ export function QuickPanel({
   }
 
   const isExpanded = mode === "expanded";
-  const toggleLabel = isExpanded ? t("quickPanel.close") : t("quickPanel.open");
+  const toggleLabel = isExpanded ? t("quickPanel.collapse") : t("quickPanel.open");
   const displayedErrorMessageKey = localErrorMessageKey ?? errorMessageKey;
 
   return (
@@ -230,7 +270,7 @@ export function QuickPanel({
         type="button"
       >
         {isExpanded ? (
-          <X aria-hidden="true" size={20} strokeWidth={1.75} />
+          <ChevronUp aria-hidden="true" size={20} strokeWidth={1.75} />
         ) : (
           <CheckCircle2 aria-hidden="true" size={20} strokeWidth={1.75} />
         )}
@@ -250,6 +290,30 @@ export function QuickPanel({
           >
             <GripHorizontal aria-hidden="true" size={14} strokeWidth={1.75} />
             <span>{t("quickPanel.today")}</span>
+            {onOpenMainWindow ? (
+              <button
+                aria-label={t("quickPanel.openMain")}
+                className="quick-panel__header-action"
+                onClick={() => void handleOpenMainWindow()}
+                onMouseDown={(event) => event.stopPropagation()}
+                title={t("quickPanel.openMain")}
+                type="button"
+              >
+                <PanelTopOpen aria-hidden="true" size={16} strokeWidth={1.75} />
+              </button>
+            ) : null}
+            {onExitApp ? (
+              <button
+                aria-label={t("quickPanel.exit")}
+                className="quick-panel__header-action quick-panel__header-action--exit"
+                onClick={() => void handleExitApp()}
+                onMouseDown={(event) => event.stopPropagation()}
+                title={t("quickPanel.exit")}
+                type="button"
+              >
+                <Power aria-hidden="true" size={16} strokeWidth={1.75} />
+              </button>
+            ) : null}
           </div>
           <ul aria-label={t("quickPanel.today")} className="quick-panel__tasks">
             {openTasks.map((task) => {

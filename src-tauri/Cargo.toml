@@ -28,6 +28,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 rusqlite = { version = "0.37", features = ["bundled"] }
 tokio = { version = "1", default-features = false, features = ["sync", "time", "macros"] }
 tokio-util = { version = "0.7", features = ["rt"] }
+tauri-plugin-single-instance = "2"
 
 [dev-dependencies]
 tokio = { version = "1", default-features = false, features = ["macros", "rt-multi-thread"] }
