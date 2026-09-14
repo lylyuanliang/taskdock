@@ -26,6 +26,7 @@ coverage/
 playwright-report/
 test-results/
 artifacts/screenshots/
+/.codegraph/
 *.tsbuildinfo
 vite.config.d.ts
 vite.config.js
