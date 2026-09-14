@@ -93,9 +93,17 @@ pnpm tauri dev
 
 该命令使用正式应用标识 `io.github.lylyuanliang.taskdock`，源码运行会读取正式版的数据目录，适合在真实任务数据上验证。启动前必须关闭已安装的 TaskDock 和其他同标识进程，禁止与正式版并行运行。首次进行源码验证前，请备份应用数据目录中的 `todo-app.sqlite3`、`todo-app.sqlite3-wal` 和 `todo-app.sqlite3-shm`（如果存在）。
 
+需要生成 Windows 安装包时，可以双击项目根目录的 `package-release.bat`，或在终端执行：
+
+```powershell
+pnpm tauri build
+```
+
+脚本不会自动关闭正在运行的开发进程；开始前请先关闭所有 `pnpm tauri dev` 实例。安装包会生成在 `src-tauri/target/release/bundle/nsis/` 和 `src-tauri/target/release/bundle/msi/`，这些目录已被 Git 忽略。
+
 ## Windows 发布构建
 
-以下流程面向维护者手动构建 Windows 发布包，不用于日常开发。开始前请关闭所有 `pnpm tauri dev` 实例。Tauri 构建命令会自动执行已配置的前端生产构建。
+以下流程面向维护者手动构建 Windows 发布包，不用于日常开发。也可以直接双击项目根目录的 `package-release.bat` 执行打包。开始前请关闭所有 `pnpm tauri dev` 实例。Tauri 构建命令会自动执行已配置的前端生产构建。
 
 ```powershell
 pnpm install --frozen-lockfile

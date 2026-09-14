@@ -93,9 +93,17 @@ pnpm tauri dev
 
 This command uses the production application identifier `io.github.lylyuanliang.taskdock`, so the source run reads the installed build's data directory for validation with real tasks. Close the installed TaskDock app and any other process using this identifier before starting, and never run both builds concurrently. Before the first source validation, back up `todo-app.sqlite3` together with `todo-app.sqlite3-wal` and `todo-app.sqlite3-shm` when present.
 
+To create Windows installers, double-click `package-release.bat` in the repository root, or run:
+
+```powershell
+pnpm tauri build
+```
+
+The script does not close running development processes automatically; stop every `pnpm tauri dev` instance first. Installers are generated under `src-tauri/target/release/bundle/nsis/` and `src-tauri/target/release/bundle/msi/`, which are ignored by Git.
+
 ## Windows Release Build
 
-The following process is for maintainers creating a manual Windows release, not for normal development. Stop every `pnpm tauri dev` instance before starting. The Tauri build command runs the configured frontend production build automatically.
+The following process is for maintainers creating a manual Windows release, not for normal development. You can also double-click `package-release.bat` in the repository root to start packaging. Stop every `pnpm tauri dev` instance before starting. The Tauri build command runs the configured frontend production build automatically.
 
 ```powershell
 pnpm install --frozen-lockfile
