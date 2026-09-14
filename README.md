@@ -24,6 +24,12 @@ TaskDock is a local-first desktop task manager for personal work, software deliv
 - Android and broader cross-platform support.
 - Attachments, comments, and richer project collaboration workflows.
 
+## Documentation
+
+- [Architecture](docs/architecture.md): runtime boundaries, data ownership, and extension strategy. The primary project documents are maintained in Simplified Chinese.
+- [Roadmap](docs/roadmap.md): delivery milestones, current phase, and exit criteria.
+- [Known issues and release risks](docs/known-issues.md): confirmed issues, validation gaps, and expected repair milestones.
+
 ## Screens And Naming
 
 The user-facing product and bundle name is **TaskDock**. Internal compatibility names, including the Rust package and the local `todo-app.sqlite3` database filename, intentionally remain unchanged so existing local task data is not migrated solely for branding.
@@ -177,7 +183,3 @@ When contributing:
 ## License
 
 TaskDock is licensed under the [MIT License](LICENSE).
-
-## Roadmap
-
-The near-term focus is completing the desktop interaction model, forms, search and state polish, then preparing WebDAV synchronization and the extension boundaries required for a future AI service. Milestones and implementation handoffs are maintained locally and are not part of the public repository.
