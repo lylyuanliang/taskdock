@@ -85,11 +85,13 @@ Run the Vite frontend for static layout and visual work:
 pnpm dev
 ```
 
-The browser server has no task/project data adapter, so task and project operations require the Tauri desktop shell. Run the functional Windows application with:
+The browser server has no task/project data adapter, so task and project operations require the Tauri desktop shell. For daily development, double-click `start-dev.bat` in the repository root, or run:
 
 ```powershell
 pnpm tauri dev
 ```
+
+This command uses the production application identifier `io.github.lylyuanliang.taskdock`, so the source run reads the installed build's data directory for validation with real tasks. Close the installed TaskDock app and any other process using this identifier before starting, and never run both builds concurrently. Before the first source validation, back up `todo-app.sqlite3` together with `todo-app.sqlite3-wal` and `todo-app.sqlite3-shm` when present.
 
 ## Windows Release Build
 

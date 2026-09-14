@@ -85,11 +85,13 @@ git clone git@github.com:lylyuanliang/taskdock.git
 pnpm dev
 ```
 
-浏览器服务没有任务或项目数据适配器，因此任务和项目操作需要在 Tauri 桌面壳中运行。启动可实际使用的 Windows 应用：
+浏览器服务没有任务或项目数据适配器，因此任务和项目操作需要在 Tauri 桌面壳中运行。日常开发建议双击项目根目录的 `start-dev.bat`，或在终端执行：
 
 ```powershell
 pnpm tauri dev
 ```
+
+该命令使用正式应用标识 `io.github.lylyuanliang.taskdock`，源码运行会读取正式版的数据目录，适合在真实任务数据上验证。启动前必须关闭已安装的 TaskDock 和其他同标识进程，禁止与正式版并行运行。首次进行源码验证前，请备份应用数据目录中的 `todo-app.sqlite3`、`todo-app.sqlite3-wal` 和 `todo-app.sqlite3-shm`（如果存在）。
 
 ## Windows 发布构建
 
