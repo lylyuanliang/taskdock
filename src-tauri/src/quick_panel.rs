@@ -17,8 +17,8 @@ use tauri::{
 };
 
 const COLLAPSED_SIZE: LogicalSize = LogicalSize::new(44.0, 44.0);
-const EXPANDED_WIDTH: f64 = 320.0;
-const EXPANDED_MAX_HEIGHT: f64 = 480.0;
+const EXPANDED_WIDTH: f64 = 574.0;
+const EXPANDED_MAX_HEIGHT: f64 = 460.0;
 const MOVED_DEBOUNCE: Duration = Duration::from_millis(140);
 const PREFERENCES_FILE_NAME: &str = "quick-panel-preferences.json";
 const LEGACY_HOVER_PREFERENCES_VERSION: u8 = 2;
@@ -676,6 +676,7 @@ pub(crate) fn build_quick_panel(
     .title("TaskDock")
     .decorations(false)
     .transparent(true)
+    .shadow(false)
     .always_on_top(true)
     .skip_taskbar(true)
     .resizable(false)

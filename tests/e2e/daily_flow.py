@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from queue import Empty, Queue
 import signal
 import socket
@@ -62,6 +63,10 @@ TAURI_MOCK = r"""
   const tasks = new Map([
     ["task-inbox-1", task("task-inbox-1", "E2E initial task")],
     [
+      "task-completed-today",
+      task("task-completed-today", "E2E completed today", { completedAt: now }),
+    ],
+    [
       "task-parent-e2e",
       task("task-parent-e2e", "E2E parent task", { projectId: project.id }),
     ],
@@ -75,6 +80,7 @@ TAURI_MOCK = r"""
   ]);
   const tags = new Map([
     ["task-inbox-1", ["initial-tag"]],
+    ["task-completed-today", []],
     ["task-parent-e2e", []],
     ["task-child-e2e", []],
   ]);
@@ -100,6 +106,7 @@ TAURI_MOCK = r"""
     scheduledAt: candidate.scheduledAt,
     dueAt: candidate.dueAt,
     completed: candidate.completedAt !== null,
+    hasNote: Boolean(candidate.note && candidate.note.trim()),
     childTotal: allTasks().filter((item) => item.parentId === candidate.id).length,
     childCompleted: allTasks().filter(
       (item) => item.parentId === candidate.id && item.completedAt !== null,
@@ -140,6 +147,12 @@ TAURI_MOCK = r"""
       let result = allTasks();
       if (view.kind === "completed") result = result.filter((candidate) => candidate.completedAt !== null);
       if (view.kind === "today") result = result.filter((candidate) => candidate.completedAt === null);
+      if (view.kind === "quickPanelToday") {
+        result = result.filter(
+          (candidate) =>
+            candidate.completedAt === null || candidate.completedAt.startsWith("2026-09-09"),
+        );
+      }
       if (view.kind === "upcoming") result = result.filter((candidate) => candidate.completedAt === null);
       if (view.kind === "calendar") result = result.filter((candidate) => candidate.scheduledAt !== null);
       if (view.kind === "search") {
@@ -679,6 +692,115 @@ def run_quick_panel_click_flow(page: Page) -> None:
 
     open_button.click()
     expect(page.get_by_text("E2E initial task", exact=True)).to_be_visible()
+    expect(page.get_by_text("E2E completed today", exact=True)).to_be_visible()
+    expect(
+        page.get_by_role("button", name="Add note E2E initial task", exact=True)
+    ).to_be_visible()
+    completed_checkbox = page.get_by_role("checkbox", name="Complete task E2E completed today")
+    expect(completed_checkbox).to_be_disabled()
+    expect(completed_checkbox).to_have_attribute("aria-checked", "true")
+    page.get_by_role("button", name="E2E Project", exact=True).click()
+    expect(page.get_by_text("E2E parent task", exact=True)).to_be_visible()
+    expect(page.get_by_text("E2E initial task", exact=True)).not_to_be_visible()
+    expect(page.get_by_role("dialog")).not_to_be_visible()
+    page.get_by_role("button", name="E2E Project", exact=True).click()
+    project_dialog = page.get_by_role("dialog")
+    expect(project_dialog).to_be_visible()
+    project_dialog.get_by_role("button", name=re.compile(r"^All projects")).click()
+    expect(project_dialog).not_to_be_visible()
+    expect(page.get_by_text("E2E initial task", exact=True)).to_be_visible()
+    geometry = page.evaluate(
+        """() => {
+          const panel = document.querySelector('.quick-panel');
+          const content = document.querySelector('.quick-panel__content');
+          const rail = document.querySelector('.quick-panel__project-rail');
+          const tasks = document.querySelector('.quick-panel__tasks');
+          const firstTask = document.querySelector('.quick-panel__task');
+          const tabs = Array.from(document.querySelectorAll('.quick-panel__project-tab'));
+          if (!panel || !content || !rail || !tasks || !firstTask || tabs.length === 0) {
+            throw new Error('quick panel geometry nodes are missing');
+          }
+          const panelRect = panel.getBoundingClientRect();
+          const contentRect = content.getBoundingClientRect();
+          const railRect = rail.getBoundingClientRect();
+          return {
+            panelHeight: panelRect.height,
+            panelLeft: panelRect.left,
+            panelWidth: panelRect.width,
+            contentLeft: contentRect.left,
+            contentWidth: contentRect.width,
+            railLeft: railRect.left,
+            railWidth: railRect.width,
+            firstTabRight: tabs[0].getBoundingClientRect().right,
+            railBackground: getComputedStyle(rail).backgroundColor,
+            railBorderLeft: getComputedStyle(rail).borderLeftWidth,
+            railPointerEvents: getComputedStyle(rail).pointerEvents,
+            contentBorderLeft: getComputedStyle(content).borderLeftWidth,
+            contentBorderTopLeftRadius: getComputedStyle(content).borderTopLeftRadius,
+            contentBorderBottomLeftRadius: getComputedStyle(content).borderBottomLeftRadius,
+            contentSeamContent: getComputedStyle(content, '::before').content,
+            taskListPaddingLeft: getComputedStyle(tasks).paddingLeft,
+            taskAlignItems: getComputedStyle(firstTask).alignItems,
+            taskHeight: firstTask.getBoundingClientRect().height,
+            taskBorderBottom: getComputedStyle(firstTask).borderBottomWidth,
+          };
+        }"""
+    )
+    expected_geometry = {
+        "panelHeight": 460,
+        "panelLeft": 0,
+        "panelWidth": 574,
+        "contentLeft": 34,
+        "contentWidth": 540,
+        "railLeft": 0,
+        "railWidth": 34,
+    }
+    for key, expected in expected_geometry.items():
+        if abs(geometry[key] - expected) > 1:
+            raise AssertionError(
+                f"quick panel geometry mismatch for {key}: expected {expected}, got {geometry}"
+            )
+    if geometry["railBackground"] not in {"rgba(0, 0, 0, 0)", "transparent"}:
+        raise AssertionError(f"project rail must be transparent: {geometry}")
+    if geometry["railBorderLeft"] != "0px":
+        raise AssertionError(f"project rail must not draw a border: {geometry}")
+    if geometry["railPointerEvents"] != "none":
+        raise AssertionError(f"project rail must not intercept pointer events: {geometry}")
+    if geometry["contentBorderLeft"] != "1px":
+        raise AssertionError(f"panel left edge must cover the rail seam: {geometry}")
+    if geometry["contentBorderTopLeftRadius"] != "12px":
+        raise AssertionError(f"panel top-left corner must remain rounded: {geometry}")
+    if geometry["contentBorderBottomLeftRadius"] != "12px":
+        raise AssertionError(f"panel bottom-left corner must remain rounded: {geometry}")
+    if geometry["contentSeamContent"] not in {"none", ""}:
+        raise AssertionError(f"panel must not render a continuous seam pseudo-element: {geometry}")
+    if geometry["firstTabRight"] > geometry["contentLeft"] + 0.5:
+        raise AssertionError(f"project tab intrudes into panel content: {geometry}")
+    if geometry["taskListPaddingLeft"] != "20px":
+        raise AssertionError(f"task list must use the initial left span: {geometry}")
+    if geometry["taskAlignItems"] != "center":
+        raise AssertionError(f"task rows must vertically center their contents: {geometry}")
+    if geometry["taskHeight"] > 50:
+        raise AssertionError(f"task rows must stay compact: {geometry}")
+    if geometry["taskBorderBottom"] != "0px":
+        raise AssertionError(f"task rows must use a stable separator pseudo-element: {geometry}")
+    overflow = page.evaluate(
+        """() => ({
+          bodyWidth: document.body.scrollWidth,
+          bodyHeight: document.body.scrollHeight,
+          documentWidth: document.documentElement.scrollWidth,
+          documentHeight: document.documentElement.scrollHeight,
+          viewportWidth: document.documentElement.clientWidth,
+          viewportHeight: document.documentElement.clientHeight,
+        })"""
+    )
+    if (
+        overflow["bodyWidth"] > overflow["viewportWidth"]
+        or overflow["documentWidth"] > overflow["viewportWidth"]
+        or overflow["bodyHeight"] > overflow["viewportHeight"]
+        or overflow["documentHeight"] > overflow["viewportHeight"]
+    ):
+        raise AssertionError(f"quick panel has layout overflow: {json.dumps(overflow)}")
     quick_panel_calls = [
         call for call in calls(page) if call["command"] == "set_quick_panel_mode"
     ]
@@ -761,7 +883,7 @@ def main() -> None:
                 run_page_flow(desktop, url, run_desktop_flow)
                 mobile = browser.new_page(viewport={"width": 360, "height": 800})
                 run_page_flow(mobile, url, run_mobile_smoke)
-                quick_panel = browser.new_page(viewport={"width": 320, "height": 480})
+                quick_panel = browser.new_page(viewport={"width": 574, "height": 460})
                 run_page_flow(
                     quick_panel,
                     f"http://127.0.0.1:{port}/quick-panel.html",

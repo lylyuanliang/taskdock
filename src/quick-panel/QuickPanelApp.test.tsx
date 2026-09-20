@@ -28,6 +28,20 @@ const openTodayTask: TaskSummaryDto = {
   title: "Ship quick panel",
 };
 
+const completedTodaySummary: TaskSummaryDto = {
+  childCompleted: 0,
+  childTotal: 0,
+  completed: true,
+  dueAt: null,
+  hasNote: false,
+  id: "completed-today",
+  priority: "Normal",
+  projectName: null,
+  scheduledAt: "2026-08-28T09:00:00.000Z",
+  tags: [],
+  title: "Already completed today",
+};
+
 const completeTask: TaskDto = {
   completedAt: "2026-08-28T14:30:00.000Z",
   createdAt: "2026-08-28T09:00:00.000Z",
@@ -53,6 +67,33 @@ describe("QuickPanelApp", () => {
     cleanup();
     vi.clearAllMocks();
     vi.useRealTimers();
+  });
+
+  it("renders today-completed tasks returned by the quick panel view", async () => {
+    const user = userEvent.setup();
+    const invokeMock = vi.mocked(invoke);
+
+    invokeMock.mockImplementation((command) => {
+      if (command === "get_quick_panel_behavior") return Promise.resolve("click");
+      if (command === "list_tasks") {
+        return Promise.resolve([openTodayTask, completedTodaySummary]);
+      }
+      return Promise.resolve(undefined);
+    });
+
+    render(<QuickPanelApp />);
+
+    await user.click(await screen.findByRole("button", { name: "Open quick panel" }));
+
+    expect(await screen.findByText(completedTodaySummary.title)).toBeVisible();
+    expect(
+      screen.getByRole("checkbox", {
+        name: `Complete task ${completedTodaySummary.title}`,
+      }),
+    ).toBeDisabled();
+    expect(invokeMock).toHaveBeenCalledWith("list_tasks", {
+      view: { kind: "quickPanelToday" },
+    });
   });
 
   it("invokes the main window command from the expanded panel header", async () => {
@@ -431,7 +472,9 @@ describe("QuickPanelApp", () => {
     render(<QuickPanelApp />);
 
     await waitFor(() =>
-      expect(invokeMock).toHaveBeenCalledWith("list_tasks", { view: { kind: "today" } }),
+      expect(invokeMock).toHaveBeenCalledWith("list_tasks", {
+        view: { kind: "quickPanelToday" },
+      }),
     );
     fireEvent.click(screen.getByRole("button", { name: "Open quick panel" }));
     expect(invokeMock).toHaveBeenCalledWith("set_quick_panel_mode", { mode: "expanded" });

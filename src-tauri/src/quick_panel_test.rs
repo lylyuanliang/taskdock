@@ -114,16 +114,20 @@ fn physical_clamp_covers_all_four_work_area_edges() {
 #[test]
 fn expanded_height_is_capped_by_available_logical_work_area() {
     for (physical_height, expected_height) in [
-        (360, 360.0),
+        (320, 320.0),
         (400, 400.0),
-        (479, 479.0),
-        (480, 480.0),
-        (600, 480.0),
+        (459, 459.0),
+        (460, 460.0),
+        (600, 460.0),
     ] {
         let monitor = monitor("primary", 1.0, 0, 0, 1920, physical_height);
         assert_eq!(
             panel_dimensions_for_monitor(QuickPanelMode::Expanded, &monitor).height,
             expected_height
+        );
+        assert_eq!(
+            panel_dimensions_for_monitor(QuickPanelMode::Expanded, &monitor).width,
+            574.0
         );
     }
 
@@ -262,15 +266,15 @@ fn production_mode_application_resizes_then_clamps_moves_and_persists() {
         vec![
             WindowPortCall::OuterPosition,
             WindowPortCall::MonitorFromPosition(PhysicalPoint::new(-100, 1000)),
-            WindowPortCall::SetSize(PhysicalSize::new(320, 480)),
-            WindowPortCall::SetPosition(PhysicalPoint::new(0, 320)),
+            WindowPortCall::SetSize(PhysicalSize::new(574, 460)),
+            WindowPortCall::SetPosition(PhysicalPoint::new(0, 340)),
         ]
     );
     assert_eq!(
         state.preferences().unwrap().position,
         Some(SavedPanelPosition::new(
             "primary",
-            LogicalPosition::new(0.0, 320.0)
+            LogicalPosition::new(0.0, 340.0)
         ))
     );
 

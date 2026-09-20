@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -15,6 +15,7 @@ const openTodayTask: TaskSummaryDto = {
   childTotal: 0,
   completed: false,
   dueAt: null,
+  hasNote: true,
   id: "open-today",
   priority: "Normal",
   projectName: null,
@@ -62,7 +63,30 @@ describe("QuickPanel", () => {
     });
 
     expect(screen.getByText(openTodayTask.title)).toBeVisible();
-    expect(screen.queryByText(completedTodayTask.title)).not.toBeInTheDocument();
+    expect(screen.getByText(completedTodayTask.title)).toBeVisible();
+  });
+
+  it("shows completed Today tasks after active tasks in the expanded list", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <QuickPanel
+        behavior="click"
+        onComplete={vi.fn()}
+        onCreate={vi.fn()}
+        onModeChange={vi.fn()}
+        tasks={[openTodayTask, completedTodayTask]}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Open quick panel" }));
+
+    expect(screen.getByText(openTodayTask.title)).toBeVisible();
+    expect(screen.getByText(completedTodayTask.title)).toBeVisible();
+    expect(screen.getByRole("checkbox", { name: "Complete task Already complete" })).toBeDisabled();
+    expect(
+      screen.getByRole("checkbox", { name: "Complete task Already complete" }),
+    ).toHaveAttribute("aria-checked", "true");
   });
 
   it("reserves a localized full-height collapsed drag handle beside the toggle", () => {
@@ -170,6 +194,25 @@ describe("QuickPanel", () => {
     expect(screen.queryByText(openTodayTask.title)).not.toBeInTheDocument();
   });
 
+  it("exposes the full title while clamping long task text", async () => {
+    const user = userEvent.setup();
+    const longTitle = "A task title that is long enough to require two-line truncation";
+
+    render(
+      <QuickPanel
+        behavior="click"
+        onComplete={vi.fn()}
+        onCreate={vi.fn()}
+        onModeChange={vi.fn()}
+        tasks={[{ ...openTodayTask, title: longTitle }]}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Open quick panel" }));
+
+    expect(screen.getByRole("button", { name: longTitle })).toHaveAttribute("title", longTitle);
+  });
+
   it("opens the main window from the expanded header without starting a drag", async () => {
     const user = userEvent.setup();
     const onOpenMainWindow = vi.fn().mockResolvedValue(undefined);
@@ -242,7 +285,84 @@ describe("QuickPanel", () => {
 
     expect(dragHeader).toHaveAttribute("title", "Move quick panel");
     expect(dragHeader.querySelector("svg")).toHaveClass("lucide-grip-horizontal");
-    expect(collapseButton.querySelector("svg")).toHaveClass("lucide-chevron-up");
+    expect(collapseButton.querySelector("svg")).toHaveClass("lucide-minus");
+    expect(collapseButton.closest(".quick-panel__header")).not.toBeNull();
+  });
+
+  it("opens the project picker from the selected rail tab with counts and selection state", async () => {
+    const user = userEvent.setup();
+    const workProject = {
+      archivedAt: null,
+      createdAt: "2026-08-28T09:00:00.000Z",
+      id: "project-work",
+      name: "Work",
+      updatedAt: "2026-08-28T09:00:00.000Z",
+    };
+
+    render(
+      <QuickPanel
+        behavior="click"
+        onComplete={vi.fn()}
+        onCreate={vi.fn()}
+        onModeChange={vi.fn()}
+        projects={[workProject]}
+        tasks={[
+          { ...openTodayTask, projectName: "Work" },
+          { ...completedTodayTask, projectName: "Work" },
+        ]}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Open quick panel" }));
+    await user.click(screen.getByRole("button", { name: "All projects" }));
+
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toBeVisible();
+    const allProjectsOption = within(dialog).getByRole("button", { name: /All projects/ });
+    expect(allProjectsOption).toHaveTextContent("2");
+    expect(allProjectsOption).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("switches projects directly from a neighboring rail tab", async () => {
+    const user = userEvent.setup();
+    const workProject = {
+      archivedAt: null,
+      createdAt: "2026-08-28T09:00:00.000Z",
+      id: "project-work",
+      name: "Work",
+      updatedAt: "2026-08-28T09:00:00.000Z",
+    };
+    const personalProject = {
+      ...workProject,
+      id: "project-personal",
+      name: "Personal",
+    };
+
+    render(
+      <QuickPanel
+        behavior="click"
+        onComplete={vi.fn()}
+        onCreate={vi.fn()}
+        onModeChange={vi.fn()}
+        projects={[workProject, personalProject]}
+        tasks={[
+          { ...openTodayTask, id: "work-task", projectName: "Work", title: "Work task" },
+          {
+            ...openTodayTask,
+            id: "personal-task",
+            projectName: "Personal",
+            title: "Personal task",
+          },
+        ]}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Open quick panel" }));
+    await user.click(screen.getByRole("button", { name: "Work" }));
+
+    expect(screen.getByText("Work task")).toBeVisible();
+    expect(screen.queryByText("Personal task")).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("completes an open Today task through the supplied real task callback", async () => {
@@ -472,6 +592,144 @@ describe("QuickPanel", () => {
 
     expect(completeButton).toBeEnabled();
     expect(screen.getByRole("alert")).toHaveTextContent("Local storage is temporarily unavailable");
+  });
+
+  it("edits a task title inline and saves a note from the anchored bubble", async () => {
+    const user = userEvent.setup();
+    const onLoadTaskEditor = vi.fn().mockResolvedValue({
+      subtasks: [],
+      tagNames: [],
+      task: {
+        ...openTodayTask,
+        createdAt: "2026-08-28T09:00:00.000Z",
+        note: "Existing note",
+        parentId: null,
+        projectId: null,
+        updatedAt: "2026-08-28T09:00:00.000Z",
+        completedAt: null,
+        revision: 1,
+      },
+    });
+    const onUpdateTask = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <QuickPanel
+        behavior="click"
+        onComplete={vi.fn()}
+        onCreate={vi.fn()}
+        onLoadTaskEditor={onLoadTaskEditor}
+        onModeChange={vi.fn()}
+        onUpdateTask={onUpdateTask}
+        tasks={[openTodayTask]}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Open quick panel" }));
+    await user.click(screen.getByRole("button", { name: openTodayTask.title }));
+    const titleInput = screen.getByRole("textbox", { name: /Task title/ });
+    await user.clear(titleInput);
+    await user.type(titleInput, "Updated task");
+    fireEvent.blur(titleInput, { relatedTarget: null });
+    await waitFor(() =>
+      expect(onUpdateTask).toHaveBeenCalledWith(openTodayTask.id, { title: "Updated task" }),
+    );
+
+    await user.click(screen.getByRole("button", { name: `Edit note ${openTodayTask.title}` }));
+    const noteInput = await screen.findByRole("textbox", { name: `Note ${openTodayTask.title}` });
+    expect(onLoadTaskEditor).toHaveBeenCalledWith(openTodayTask.id);
+    await user.clear(noteInput);
+    await user.type(noteInput, "Updated note");
+    expect(screen.getByText("Auto-save")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Save note" })).toBeVisible();
+    fireEvent.pointerDown(document.body);
+    await waitFor(() =>
+      expect(onUpdateTask).toHaveBeenCalledWith(openTodayTask.id, { note: "Updated note" }),
+    );
+  });
+
+  it("keeps an add-note entry visible until a task has a note", async () => {
+    const user = userEvent.setup();
+    const onLoadTaskEditor = vi.fn().mockResolvedValue({
+      subtasks: [],
+      tagNames: [],
+      task: {
+        ...openTodayTask,
+        note: "",
+      },
+    });
+
+    render(
+      <QuickPanel
+        behavior="click"
+        onComplete={vi.fn()}
+        onCreate={vi.fn()}
+        onLoadTaskEditor={onLoadTaskEditor}
+        onModeChange={vi.fn()}
+        tasks={[{ ...openTodayTask, hasNote: false }]}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Open quick panel" }));
+
+    const addNoteButton = screen.getByRole("button", {
+      name: `Add note ${openTodayTask.title}`,
+    });
+    expect(addNoteButton).toBeVisible();
+    expect(addNoteButton.querySelector("svg")).toHaveClass("lucide-message-square-plus");
+
+    await user.click(addNoteButton);
+    expect(onLoadTaskEditor).toHaveBeenCalledWith(openTodayTask.id);
+    expect(
+      await screen.findByRole("textbox", { name: `Note ${openTodayTask.title}` }),
+    ).toBeVisible();
+  });
+
+  it("expands quick capture with a project and creates the task", async () => {
+    const user = userEvent.setup();
+    const onCreate = vi.fn().mockResolvedValue(undefined);
+    const project = {
+      archivedAt: null,
+      createdAt: "2026-08-28T09:00:00.000Z",
+      id: "project-work",
+      name: "Work",
+      updatedAt: "2026-08-28T09:00:00.000Z",
+    };
+
+    render(
+      <QuickPanel
+        behavior="click"
+        onComplete={vi.fn()}
+        onCreate={onCreate}
+        onModeChange={vi.fn()}
+        projects={[project]}
+        tasks={[openTodayTask]}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Open quick panel" }));
+    await user.click(screen.getByRole("button", { name: "Add note or project" }));
+    expect(
+      screen.getByRole("button", { name: "Add note or project" }).querySelector("svg"),
+    ).toHaveClass("lucide-minus");
+    expect(screen.getByText("Enter")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Create task" })).toHaveTextContent("Add");
+    await user.type(screen.getByRole("textbox", { name: "Add task" }), "Capture release note");
+    await user.type(screen.getByRole("textbox", { name: "New task note" }), "Release details");
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Project for new task" }),
+      project.id,
+    );
+    await user.click(screen.getByRole("button", { name: "Create task" }));
+
+    await waitFor(() =>
+      expect(onCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          note: "Release details",
+          projectId: project.id,
+          title: "Capture release note",
+        }),
+      ),
+    );
   });
 });
 
