@@ -920,6 +920,7 @@ fn list_task_summaries(
 ) -> Result<Vec<TaskSummaryDto>, AppError> {
     const TASK_SUMMARY_SELECT: &str = "SELECT t.id, t.title, p.name, t.priority, \
         t.scheduled_at, t.due_at, t.completed_at IS NOT NULL, \
+        t.note IS NOT NULL AND trim(t.note) <> '', \
         (SELECT COUNT(*) FROM todo_tasks child WHERE child.parent_id = t.id), \
         (SELECT COUNT(*) FROM todo_tasks child \
          WHERE child.parent_id = t.id AND child.completed_at IS NOT NULL) \
@@ -941,6 +942,18 @@ fn list_task_summaries(
                 "{TASK_SUMMARY_SELECT} WHERE t.parent_id IS NULL AND t.completed_at IS NULL \
                  AND t.scheduled_at IS NOT NULL AND date(t.scheduled_at, 'localtime') <= ?1 \
                  ORDER BY t.scheduled_at ASC, t.created_at ASC"
+            ),
+            params![day.to_string()],
+        )?,
+        TaskView::QuickPanelToday { day } => query_task_summaries(
+            connection,
+            &format!(
+                "{TASK_SUMMARY_SELECT} WHERE t.parent_id IS NULL \
+                 AND ((t.completed_at IS NULL AND t.scheduled_at IS NOT NULL \
+                       AND date(t.scheduled_at, 'localtime') <= ?1) \
+                      OR date(t.completed_at, 'localtime') = ?1) \
+                 ORDER BY t.completed_at IS NOT NULL ASC, t.scheduled_at ASC, \
+                          t.completed_at ASC, t.created_at ASC"
             ),
             params![day.to_string()],
         )?,
@@ -1041,8 +1054,9 @@ fn task_summary_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<TaskSummar
         scheduled_at,
         due_at,
         completed: row.get(6)?,
-        child_total: row.get(7)?,
-        child_completed: row.get(8)?,
+        has_note: row.get(7)?,
+        child_total: row.get(8)?,
+        child_completed: row.get(9)?,
     })
 }
 

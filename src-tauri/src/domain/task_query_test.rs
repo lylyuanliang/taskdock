@@ -39,6 +39,35 @@ fn today_includes_scheduled_and_overdue_top_level_tasks_only() {
 }
 
 #[test]
+fn quick_panel_today_includes_open_tasks_and_tasks_completed_on_the_day() {
+    let repository = SqliteTaskRepository::in_memory().unwrap();
+    let day = NaiveDate::from_ymd_opt(2026, 8, 26).unwrap();
+
+    let mut open = Task::for_test("Open today".into());
+    open.scheduled_at = Some(fixed_utc(2026, 8, 26, 9, 0, 0));
+    let mut completed_today = Task::for_test("Completed today".into());
+    completed_today.completed_at = Some(fixed_utc(2026, 8, 26, 10, 0, 0));
+    let mut completed_yesterday = Task::for_test("Completed yesterday".into());
+    completed_yesterday.completed_at = Some(fixed_utc(2026, 8, 25, 10, 0, 0));
+
+    for task in [&open, &completed_today, &completed_yesterday] {
+        repository.insert(task).unwrap();
+    }
+
+    let summaries = repository
+        .list_tasks(&TaskView::QuickPanelToday { day })
+        .unwrap();
+
+    assert_eq!(
+        summaries
+            .into_iter()
+            .map(|summary| summary.title)
+            .collect::<Vec<_>>(),
+        vec!["Open today", "Completed today"]
+    );
+}
+
+#[test]
 fn upcoming_uses_the_system_local_calendar_day_for_utc_timestamps() {
     let repository = SqliteTaskRepository::in_memory().unwrap();
     let mut task = Task::for_test("Local-day task".into());
@@ -255,6 +284,7 @@ fn project_summary_includes_archived_project_tags_and_direct_child_counts(
     let first_tag_id = Uuid::new_v4();
     let second_tag_id = Uuid::new_v4();
     let mut parent = Task::for_test("Prepare release".into());
+    parent.note = "Release details".into();
     parent.project_id = Some(project_id);
     parent.scheduled_at = Some(fixed_utc(2026, 8, 26, 9, 0, 0));
     parent.due_at = Some(fixed_utc(2026, 8, 27, 17, 0, 0));
@@ -306,6 +336,7 @@ fn project_summary_includes_archived_project_tags_and_direct_child_counts(
     assert_eq!(summary.scheduled_at, parent.scheduled_at);
     assert_eq!(summary.due_at, parent.due_at);
     assert!(!summary.completed);
+    assert!(summary.has_note);
     assert_eq!(summary.child_total, 2);
     assert_eq!(summary.child_completed, 1);
     assert_eq!(
@@ -319,6 +350,7 @@ fn project_summary_includes_archived_project_tags_and_direct_child_counts(
             "scheduledAt": "2026-08-26T09:00:00Z",
             "dueAt": "2026-08-27T17:00:00Z",
             "completed": false,
+            "hasNote": true,
             "childTotal": 2,
             "childCompleted": 1,
         })

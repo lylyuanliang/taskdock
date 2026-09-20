@@ -75,6 +75,7 @@ pub(crate) struct TaskIdDto(pub(crate) String);
 pub(crate) enum TaskViewDto {
     Inbox,
     Today,
+    QuickPanelToday,
     Upcoming,
     Completed,
     Project {
@@ -704,6 +705,9 @@ impl TryFrom<TaskViewDto> for TaskView {
             TaskViewDto::Today => Ok(Self::Today {
                 day: Local::now().date_naive(),
             }),
+            TaskViewDto::QuickPanelToday => Ok(Self::QuickPanelToday {
+                day: Local::now().date_naive(),
+            }),
             TaskViewDto::Upcoming => Ok(Self::Upcoming {
                 day: Local::now().date_naive(),
             }),
@@ -956,7 +960,7 @@ fn validate_task_view_fields(value: &Value) -> Result<(), CommandError> {
         .and_then(Value::as_str)
         .ok_or_else(CommandError::invalid_task_input)?;
     let allowed_fields: &[&str] = match kind {
-        "inbox" | "today" | "upcoming" | "completed" => &["kind"],
+        "inbox" | "today" | "quickPanelToday" | "upcoming" | "completed" => &["kind"],
         "project" => &["kind", "projectId"],
         "search" => &["kind", "query"],
         "calendar" => &["kind", "month"],

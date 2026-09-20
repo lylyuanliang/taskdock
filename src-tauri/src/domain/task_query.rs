@@ -8,6 +8,7 @@ use crate::domain::task::Priority;
 pub enum TaskView {
     Inbox,
     Today { day: NaiveDate },
+    QuickPanelToday { day: NaiveDate },
     Upcoming { day: NaiveDate },
     Completed,
     Project(Uuid),
@@ -26,6 +27,7 @@ pub struct TaskSummaryDto {
     pub scheduled_at: Option<DateTime<Utc>>,
     pub due_at: Option<DateTime<Utc>>,
     pub completed: bool,
+    pub has_note: bool,
     pub child_total: u32,
     pub child_completed: u32,
 }

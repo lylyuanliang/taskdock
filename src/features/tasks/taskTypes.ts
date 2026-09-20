@@ -12,7 +12,7 @@ export interface RecurrenceRule {
 export type AppView = "inbox" | "today" | "upcoming" | "completed" | "projects" | "calendar";
 
 export type TaskViewInput =
-  | { kind: "inbox" | "today" | "upcoming" | "completed" }
+  | { kind: "inbox" | "today" | "quickPanelToday" | "upcoming" | "completed" }
   | { kind: "project"; projectId: string }
   | { kind: "calendar"; month: string }
   | { kind: "search"; query: string };
@@ -26,6 +26,7 @@ export interface TaskSummaryDto {
   scheduledAt: string | null;
   dueAt: string | null;
   completed: boolean;
+  hasNote?: boolean;
   childTotal: number;
   childCompleted: number;
 }
