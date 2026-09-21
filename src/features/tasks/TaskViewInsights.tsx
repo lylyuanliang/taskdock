@@ -50,9 +50,15 @@ function formatTaskMoment(value: string): string {
 
 function TaskViewInsights({ items, status, view }: TaskViewInsightsProps) {
   const title = getInsightTitle(view);
+  const selectedItem = items.find((item) => !item.completed) ?? items[0] ?? null;
+  const datedItems = getDatedItems(items);
 
   return (
-    <aside aria-labelledby="task-view-insights-heading" className="task-view-insights">
+    <aside
+      aria-labelledby="task-view-insights-heading"
+      className="task-view-insights"
+      data-testid="task-insights"
+    >
       <h2 id="task-view-insights-heading">{title}</h2>
       {status === "loading" ? (
         <p className="task-view-insights__status" role="status">
@@ -70,20 +76,47 @@ function TaskViewInsights({ items, status, view }: TaskViewInsightsProps) {
         </p>
       ) : null}
       {status === "ready" && items.length > 0 && view === "inbox" ? (
-        <dl className="task-view-insights__metrics">
-          <div>
-            <dt>{t("tasks.insights.total")}</dt>
-            <dd>{items.length}</dd>
-          </div>
-          <div>
-            <dt>{t("tasks.insights.dated")}</dt>
-            <dd>{getDatedItems(items).length}</dd>
-          </div>
-          <div>
-            <dt>{t("tasks.insights.projectLinks")}</dt>
-            <dd>{items.filter((item) => item.projectLabel !== null).length}</dd>
-          </div>
-        </dl>
+        <>
+          <dl className="task-view-insights__metrics">
+            <div>
+              <dt>{t("tasks.insights.total")}</dt>
+              <dd>{items.length}</dd>
+            </div>
+            <div>
+              <dt>{t("tasks.insights.dated")}</dt>
+              <dd>{datedItems.length}</dd>
+            </div>
+            <div>
+              <dt>{t("tasks.insights.projectLinks")}</dt>
+              <dd>{items.filter((item) => item.projectLabel !== null).length}</dd>
+            </div>
+          </dl>
+          {datedItems.length > 0 ? (
+            <ul aria-label={title} className="task-view-insights__timeline">
+              {datedItems.map((item) => {
+                const moment = getTaskMoment(item);
+
+                return moment ? (
+                  <li key={item.id}>
+                    <strong>{item.title}</strong>
+                    <time dateTime={moment}>{formatTaskMoment(moment)}</time>
+                  </li>
+                ) : null;
+              })}
+            </ul>
+          ) : null}
+        </>
+      ) : null}
+      {status === "ready" && selectedItem !== null ? (
+        <article className="task-view-insights__detail">
+          <span>{selectedItem.projectLabel ?? t("task.project.none")}</span>
+          <h3>{selectedItem.title}</h3>
+          <time dateTime={getTaskMoment(selectedItem) ?? undefined}>
+            {getTaskMoment(selectedItem)
+              ? formatTaskMoment(getTaskMoment(selectedItem) as string)
+              : t("tasks.insights.unscheduled")}
+          </time>
+        </article>
       ) : null}
       {status === "ready" && items.length > 0 && (view === "today" || view === "upcoming") ? (
         <>

@@ -1,4 +1,4 @@
-import { CircleCheck, Undo2 } from "lucide-react";
+import { CircleCheck, FileText, Undo2 } from "lucide-react";
 import { t } from "../../i18n";
 import type { TaskSummaryDto } from "./taskTypes";
 
@@ -10,7 +10,45 @@ interface TaskSummaryListProps {
 }
 
 function formatTaskTime(task: TaskSummaryDto): string {
-  return task.dueAt ?? task.scheduledAt ?? "--:--";
+  const value = task.dueAt ?? task.scheduledAt;
+
+  if (value === null) {
+    return "--:--";
+  }
+
+  if (/^\d{2}:\d{2}$/.test(value)) {
+    return value;
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  if (!value.includes("T")) {
+    return new Intl.DateTimeFormat(navigator.language, {
+      day: "2-digit",
+      month: "short",
+    }).format(date);
+  }
+
+  return new Intl.DateTimeFormat(navigator.language, {
+    hour: "2-digit",
+    hour12: false,
+    minute: "2-digit",
+  }).format(date);
+}
+
+function getPriorityLabel(priority: TaskSummaryDto["priority"]): string {
+  switch (priority) {
+    case "Low":
+      return t("task.priority.low");
+    case "High":
+      return t("task.priority.high");
+    case "Normal":
+      return t("task.priority.normal");
+  }
 }
 
 function TaskSummaryList({
@@ -34,7 +72,13 @@ function TaskSummaryList({
         const statusLabel = task.completed ? t("task.completed") : t("task.open");
 
         return (
-          <li className="task-ledger-row task-ledger-row--summary" key={task.id}>
+          <li
+            className={`task-ledger-row task-ledger-row--summary${task.completed ? " task-ledger-row--completed" : ""}`}
+            data-task-id={task.id}
+            data-task-priority={task.priority.toLowerCase()}
+            data-task-state={task.completed ? "completed" : "open"}
+            key={task.id}
+          >
             {readOnly ? (
               <span className="task-ledger-row__status">{statusLabel}</span>
             ) : (
@@ -53,8 +97,29 @@ function TaskSummaryList({
               </button>
             )}
             <div className="task-ledger-row__content">
-              <strong>{task.title}</strong>
-              <span>{task.projectName ?? t("task.project.none")}</span>
+              <div className="task-ledger-row__title">
+                <strong title={task.title}>{task.title}</strong>
+                {task.hasNote ? (
+                  <span
+                    aria-label={t("task.note")}
+                    className="task-ledger-row__note"
+                    title={t("task.note")}
+                  >
+                    <FileText aria-hidden="true" size={14} />
+                  </span>
+                ) : null}
+              </div>
+              <div className="task-ledger-row__meta">
+                <span
+                  className={`task-ledger-row__priority task-ledger-row__priority--${task.priority.toLowerCase()}`}
+                >
+                  {getPriorityLabel(task.priority)}
+                </span>
+                <span className="task-ledger-row__project">
+                  {task.projectName ?? t("task.project.none")}
+                  {task.childTotal > 0 ? ` · ${task.childCompleted}/${task.childTotal}` : ""}
+                </span>
+              </div>
             </div>
             <time dateTime={task.dueAt ?? task.scheduledAt ?? undefined}>
               {formatTaskTime(task)}

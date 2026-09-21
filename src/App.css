@@ -269,6 +269,24 @@ select:disabled {
   border-radius: 0 var(--radius-control) var(--radius-control) 0;
 }
 
+.navigation-rail__footer {
+  display: grid;
+  gap: 4px;
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border);
+}
+
+.navigation-rail__item--planned {
+  cursor: not-allowed;
+}
+
+.navigation-rail__item--planned:hover {
+  color: var(--color-text-secondary);
+  background: var(--color-transparent);
+  border-color: var(--color-transparent);
+}
+
 .task-view {
   width: 100%;
   min-width: 0;
@@ -584,6 +602,13 @@ h1 {
   gap: var(--space-unit);
 }
 
+.task-ledger-row__title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
 .task-ledger-row__content strong,
 .task-view-insights__timeline strong {
   overflow: hidden;
@@ -593,6 +618,46 @@ h1 {
   line-height: 1.4;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.task-ledger-row__title strong {
+  min-width: 0;
+}
+
+.task-ledger-row__note {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--color-accent);
+}
+
+.task-ledger-row__meta {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.task-ledger-row__priority {
+  padding: 1px 5px;
+  color: var(--color-text-secondary);
+  background: var(--color-surface-high);
+  border-radius: 3px;
+  font-family: "JetBrains Mono", Consolas, monospace;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.task-ledger-row__priority--high {
+  color: var(--color-warning);
+}
+
+.task-ledger-row__priority--low {
+  color: var(--color-text-secondary);
+}
+
+.task-ledger-row__project {
+  min-width: 0;
 }
 
 .task-ledger-row__content span,
@@ -1494,5 +1559,111 @@ h1 {
 
   .month-calendar__day {
     transition: none;
+  }
+}
+
+/* Stitch desktop baseline: the task ledger is the primary surface and the
+   overview rail remains a compact secondary column. */
+.workspace-bar {
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 8px 12px;
+}
+
+.workspace-bar__title {
+  display: none;
+}
+
+.workspace-bar__spacer {
+  display: block;
+  width: 120px;
+  height: 32px;
+}
+
+.task-view {
+  padding: var(--layout-page-gutter);
+  background: var(--color-canvas);
+}
+
+.task-view__header {
+  min-height: 56px;
+  padding: 8px 16px;
+  align-items: center;
+  background: var(--color-surface-low);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+}
+
+.task-view__header h1 {
+  font-size: 24px;
+  line-height: 1.3;
+}
+
+.task-view__layout {
+  grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
+  gap: var(--layout-panel-gap);
+  margin-top: var(--layout-panel-gap);
+}
+
+.task-view__ledger {
+  min-height: 0;
+  padding: 8px;
+  overflow: auto;
+  background: var(--color-surface-low);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  box-shadow: var(--elevation-recessed);
+}
+
+.task-view__ledger .task-ledger {
+  border-top: 0;
+}
+
+.task-view__ledger .task-ledger-row {
+  min-height: 56px;
+  padding: 8px;
+  border-color: color-mix(in srgb, var(--color-border) 72%, transparent);
+  border-radius: var(--radius-control);
+}
+
+.task-view__ledger .task-ledger-row + .task-ledger-row {
+  margin-top: 2px;
+}
+
+.task-view__ledger .task-ledger-row:hover {
+  background: var(--color-surface-high);
+}
+
+.task-view__ledger .task-ledger-row--completed {
+  opacity: 0.58;
+}
+
+.task-view__ledger .task-ledger-row--completed strong {
+  color: var(--color-text-secondary);
+  text-decoration: line-through;
+}
+
+.task-view-insights {
+  min-height: 0;
+  overflow: auto;
+  background: color-mix(in srgb, var(--color-surface) 84%, transparent);
+  border-radius: var(--radius-control);
+}
+
+.task-view-insights__timeline li {
+  padding-left: 12px;
+  border-left: 2px solid var(--color-border);
+}
+
+.task-view-insights__timeline li:first-child {
+  border-left-color: var(--color-accent);
+}
+
+@media (max-width: 980px) {
+  .task-view__layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .workspace-bar__spacer {
+    width: 32px;
   }
 }

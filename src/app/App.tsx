@@ -11,6 +11,7 @@ import {
 } from "../features/calendar/calendarQueryState";
 import AppNavigation from "../features/navigation/AppNavigation";
 import ProjectList from "../features/projects/ProjectList";
+import ProjectTaskBoard from "../features/projects/ProjectTaskBoard";
 import SearchDialog from "../features/search/SearchDialog";
 import { initialSearchQueryState, searchQueryReducer } from "../features/search/searchQueryState";
 import type { ProjectDto } from "../features/projects/projectTypes";
@@ -187,7 +188,7 @@ function App() {
     void loadRequest.promise
       .then((tasks) => {
         if (isCurrent && inboxRequestIdRef.current === requestId) {
-          setInboxLoadState({ requestId, status: "ready", tasks });
+          setInboxLoadState({ requestId, status: "ready", tasks: tasks ?? [] });
         }
       })
       .catch((error: unknown) => {
@@ -253,6 +254,12 @@ function App() {
           setProjects(activeProjects);
 
           const currentSelectedProjectId = selectedProjectIdRef.current;
+          if (currentSelectedProjectId === null && activeProjects.length > 0) {
+            const firstProject = activeProjects[0];
+            selectedProjectIdRef.current = firstProject.id;
+            setSelectedProjectId(firstProject.id);
+            startProjectTaskLoad(firstProject.id);
+          }
           if (
             currentSelectedProjectId !== null &&
             !activeProjects.some((project) => project.id === currentSelectedProjectId)
@@ -297,7 +304,7 @@ function App() {
       try {
         const tasks = await listTasks({ kind: "project", projectId });
         if (isCurrent && projectTaskRequestIdRef.current === requestId) {
-          setProjectTaskState({ errorMessageKey: null, isLoading: false, tasks });
+          setProjectTaskState({ errorMessageKey: null, isLoading: false, tasks: tasks ?? [] });
         }
       } catch (error: unknown) {
         if (isCurrent && projectTaskRequestIdRef.current === requestId) {
@@ -695,7 +702,7 @@ function App() {
   const summaryErrorMessageKey =
     summaryLoadState?.status === "error" ? summaryLoadState.errorMessageKey : null;
   const summaryTasks = summaryLoadState?.status === "ready" ? summaryLoadState.tasks : [];
-  const inboxTasks = inboxLoadState.status === "ready" ? inboxLoadState.tasks : [];
+  const inboxTasks = inboxLoadState.status === "ready" ? (inboxLoadState.tasks ?? []) : [];
   const inboxStatus: TaskViewDataStatus = inboxLoadState.status;
   const summaryStatus: TaskViewDataStatus =
     summaryLoadState?.status === "loading"
@@ -705,14 +712,18 @@ function App() {
         : "ready";
 
   return (
-    <div className="app-shell">
+    <div className="app-shell" data-testid="app-shell">
       <AppNavigation
         activeView={activeView}
         onCreateTask={handleNavigationNewTask}
         onViewChange={handleViewChange}
       />
       <div className="app-workspace">
-        <header aria-label={t("workspace.label")} className="workspace-bar">
+        <header
+          aria-label={t("workspace.label")}
+          className="workspace-bar"
+          data-testid="workspace-bar"
+        >
           <button
             aria-label={t("search.open")}
             className="workspace-bar__search"
@@ -729,6 +740,7 @@ function App() {
         <main
           aria-labelledby={activeView === "projects" ? "project-list-heading" : "task-view-heading"}
           className={`workspace-canvas task-view task-view--${activeView}`}
+          data-testid="task-view"
         >
           {activeView !== "projects" ? (
             <header className="task-view__header">
@@ -806,15 +818,14 @@ function App() {
                     </p>
                   ) : null}
                   {!projectTaskState.isLoading && !projectTaskState.errorMessageKey ? (
-                    <div className="project-task-summary__ledger">
-                      <TaskSummaryList
-                        onToggleCompleted={(id, completed) =>
-                          void handleToggleCompleted(id, completed)
-                        }
-                        pendingTaskIds={pendingTaskIds}
-                        tasks={projectTaskState.tasks}
-                      />
-                    </div>
+                    <ProjectTaskBoard
+                      onAddTask={handleNavigationNewTask}
+                      onToggleCompleted={(id, completed) =>
+                        void handleToggleCompleted(id, completed)
+                      }
+                      pendingTaskIds={pendingTaskIds}
+                      tasks={projectTaskState.tasks}
+                    />
                   ) : null}
                 </section>
               ) : (

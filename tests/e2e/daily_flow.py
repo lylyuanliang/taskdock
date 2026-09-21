@@ -526,8 +526,9 @@ def assert_no_horizontal_overflow(page: Page, viewport: str) -> None:
 
 
 def run_desktop_flow(page: Page) -> None:
+    task_ledger = page.get_by_role("region", name="Task ledger")
     expect(page.get_by_role("heading", name="Inbox", level=1)).to_be_visible()
-    expect(page.get_by_text("E2E initial task", exact=True)).to_be_visible()
+    expect(task_ledger.get_by_text("E2E initial task", exact=True)).to_be_visible()
     wait_for_call(page, "list_inbox", {})
 
     for label, view in (("Today", {"kind": "today"}), ("Completed", {"kind": "completed"})):
@@ -687,12 +688,12 @@ def run_quick_panel_click_flow(page: Page) -> None:
     expect(page.get_by_role("alert")).to_be_visible()
     quick_panel.hover()
     page.wait_for_timeout(260)
-    if page.get_by_text("E2E initial task", exact=True).count() != 0:
+    if quick_panel.get_by_text("E2E initial task", exact=True).count() != 0:
         raise AssertionError("Quick panel expanded after hover in click mode.")
 
     open_button.click()
-    expect(page.get_by_text("E2E initial task", exact=True)).to_be_visible()
-    expect(page.get_by_text("E2E completed today", exact=True)).to_be_visible()
+    expect(quick_panel.get_by_text("E2E initial task", exact=True)).to_be_visible()
+    expect(quick_panel.get_by_text("E2E completed today", exact=True)).to_be_visible()
     expect(
         page.get_by_role("button", name="Add note E2E initial task", exact=True)
     ).to_be_visible()
@@ -700,15 +701,15 @@ def run_quick_panel_click_flow(page: Page) -> None:
     expect(completed_checkbox).to_be_disabled()
     expect(completed_checkbox).to_have_attribute("aria-checked", "true")
     page.get_by_role("button", name="E2E Project", exact=True).click()
-    expect(page.get_by_text("E2E parent task", exact=True)).to_be_visible()
-    expect(page.get_by_text("E2E initial task", exact=True)).not_to_be_visible()
+    expect(quick_panel.get_by_text("E2E parent task", exact=True)).to_be_visible()
+    expect(quick_panel.get_by_text("E2E initial task", exact=True)).not_to_be_visible()
     expect(page.get_by_role("dialog")).not_to_be_visible()
     page.get_by_role("button", name="E2E Project", exact=True).click()
     project_dialog = page.get_by_role("dialog")
     expect(project_dialog).to_be_visible()
     project_dialog.get_by_role("button", name=re.compile(r"^All projects")).click()
     expect(project_dialog).not_to_be_visible()
-    expect(page.get_by_text("E2E initial task", exact=True)).to_be_visible()
+    expect(quick_panel.get_by_text("E2E initial task", exact=True)).to_be_visible()
     geometry = page.evaluate(
         """() => {
           const panel = document.querySelector('.quick-panel');
@@ -819,7 +820,8 @@ def run_page_flow(page: Page, url: str, flow, initialization_script: str = "") -
     page.on("console", lambda message: console_errors.append(message.text) if message.type == "error" else None)
     page.on("pageerror", lambda error: page_errors.append(str(error)))
     page.add_init_script(TAURI_MOCK + initialization_script)
-    page.goto(url, wait_until="networkidle")
+    # Vite 的 HMR 长连接不会进入 networkidle；流程内的稳定选择器负责确认界面就绪。
+    page.goto(url, wait_until="domcontentloaded")
     try:
         flow(page)
     except BaseException as error:

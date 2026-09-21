@@ -43,19 +43,16 @@ it("renders the product identity and exposes a global new-task command", async (
 it("renders the approved primary navigation order", () => {
   render(<AppNavigation activeView="inbox" onCreateTask={vi.fn()} onViewChange={vi.fn()} />);
 
-  const labels = within(screen.getByRole("navigation"))
+  const labels = within(
+    screen.getByRole("navigation").querySelector(".navigation-rail__items") as HTMLElement,
+  )
     .getAllByRole("button")
     .map((button) => {
       return button.getAttribute("aria-label") ?? button.textContent?.trim();
     });
 
-  expect(labels).toEqual([
-    "Add task",
-    "Today",
-    "Inbox",
-    "Upcoming",
-    "Calendar",
-    "Projects",
-    "Completed",
-  ]);
+  expect(labels).toEqual(["Today", "Inbox", "Upcoming", "Calendar", "Projects", "Completed"]);
+
+  expect(screen.getByRole("button", { name: "Settings" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Support" })).toBeDisabled();
 });
