@@ -1,0 +1,80 @@
+.month-calendar__toolbar {
+  grid-template-columns: 32px minmax(0, 1fr) auto 32px;
+}
+
+.month-calendar__today-button {
+  display: inline-flex;
+  min-height: 32px;
+  padding: 6px 9px;
+  align-items: center;
+  gap: 5px;
+  color: var(--color-accent);
+  background: var(--color-transparent);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  font-family: "JetBrains Mono", Consolas, monospace;
+  font-size: 11px;
+}
+
+.month-calendar__today-button:hover {
+  color: var(--color-text-primary);
+  background: var(--color-surface-high);
+  border-color: var(--color-accent);
+}
+
+.month-calendar__task {
+  display: block;
+  min-width: 0;
+  padding: 3px 5px;
+  overflow: hidden;
+  color: var(--color-text-primary);
+  background: color-mix(in srgb, var(--color-accent) 24%, var(--color-surface));
+  border-left: 3px solid var(--color-accent);
+  border-radius: 3px;
+}
+
+.month-calendar__task--high {
+  background: color-mix(in srgb, var(--color-warning) 22%, var(--color-surface));
+  border-left-color: var(--color-warning);
+}
+
+.month-calendar__task--low {
+  border-left-color: var(--color-text-secondary);
+}
+
+.month-calendar__task.is-completed {
+  opacity: 0.55;
+  text-decoration: line-through;
+}
+
+.month-calendar__task-title {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.month-calendar__task-status,
+.month-calendar__task-more {
+  display: block;
+  color: var(--color-text-secondary);
+  font-family: "JetBrains Mono", Consolas, monospace;
+  font-size: 9px;
+  line-height: 1.2;
+}
+
+.month-calendar__task-more {
+  padding: 1px 4px;
+}
+
+@media (max-width: 760px) {
+  .month-calendar__toolbar {
+    grid-template-columns: 32px minmax(0, 1fr) 32px;
+  }
+
+  .month-calendar__today-button {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-self: center;
+  }
+}

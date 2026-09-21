@@ -20,6 +20,14 @@ pnpm test:e2e
 
 `finally` 会等待并验证清理：Windows 仅对本次 `pnpm` PID 使用 `taskkill /T`；POSIX 在启动后立即保存该独立 session 的 PGID，即使 `pnpm` 根进程已退出仍先对保存的组发 TERM、轮询整个组消失，超时才对同一组发 KILL 并再次确认组已消失，最后 reap 根进程。仅当本 runner 已从 child 输出确认拥有该端口时，两种平台才在等待后确认本次分配端口已关闭；strict-port 竞争会刻意跳过该连接探测。不保存报告、截图或服务日志。命令成功仅表示当次脚本检查通过，后续变更应重新执行此命令。
 
+主窗口视觉回归使用独立脚本：
+
+```powershell
+python tests/e2e/main_window_visual.py
+```
+
+该脚本使用同一套受控 Tauri mock，在 `1600x1280`、`1346x1078`、`1440x900`、`1024x768` 和 `360x800` 检查导航/工作区几何、项目和月历入口以及水平溢出；截图写入 `C:\Users\lylyu\.codex\visualizations\2026\09\21`，不提交到 Git。它验证浏览器页面布局，不替代 Windows 原生安装版验收。
+
 ### 覆盖契约
 
 `daily_flow.py` 在导航前通过 `page.add_init_script` 注入 session 内 `window.__TAURI_INTERNALS__`、event callback 注册和 IPC task store。React Strict Mode 可重复只读请求，脚本不依赖其次数；mock 会拒绝同一目标的重复 mutation，并在 desktop flow 的 React settle 后精确比对完整 mutation 序列：create=1、父任务 update=1、complete=1、子任务 update=1。
@@ -70,18 +78,19 @@ pnpm test:e2e
 
 本节只记录同一工作树上的 fresh 运行结果。
 
-| 门禁                                                               | 实际结果                                                                                                        |
-| ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
-| `pnpm test -- --maxWorkers=1 --no-file-parallelism --reporter=dot` | 退出码 0；18 个测试文件、178 个测试通过                                                                         |
-| `pnpm test:e2e`                                                    | 退出码 0；`PASS A1-A7`，并确认受控 Vite 子进程和其已确认拥有的端口均已清理                                      |
-| `pnpm lint`                                                        | 退出码 0；ESLint 无 warning                                                                                     |
-| `pnpm format:check`                                                | 首次发现本文档格式不匹配；使用仓库 Prettier 格式化后 fresh 重跑退出码 0，所有匹配文件通过                       |
-| `pnpm build`                                                       | 退出码 0；TypeScript 构建和 Vite 构建通过，转换 1844 个模块                                                     |
-| `cargo fmt --check`                                                | 退出码 0                                                                                                        |
-| `cargo test --jobs 1`                                              | 退出码 0；lib 171/171、main 0/0、doc tests 0/0；仅有 MSVC 创建 import library 的 linker message                 |
-| `cargo clippy --jobs 1 -- -D warnings`                             | 退出码 0                                                                                                        |
-| `pnpm tauri build --debug`                                         | 最终退出码 0；生成 `src-tauri/target/debug/todo-app.exe`，并在 MSI 与 NSIS 目录生成显示名称为 TaskDock 的安装包 |
-| `git diff --check`                                                 | 退出码 0                                                                                                        |
+| 门禁                                                                     | 实际结果                                                                                                        |
+| ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| `pnpm exec vitest run --pool=forks --maxWorkers=1 --no-file-parallelism` | 退出码 0；20 个测试文件、207 个测试通过                                                                         |
+| `pnpm test:e2e`                                                          | 退出码 0；`PASS A1-A8`，并确认受控 Vite 子进程和其已确认拥有的端口均已清理                                      |
+| `python tests/e2e/main_window_visual.py`                                 | 退出码 0；6 组固定视口几何和水平溢出检查通过，截图写入临时目录                                                  |
+| `pnpm lint`                                                              | 退出码 0；ESLint 无 warning                                                                                     |
+| `pnpm format:check`                                                      | 首次发现本文档格式不匹配；使用仓库 Prettier 格式化后 fresh 重跑退出码 0，所有匹配文件通过                       |
+| `pnpm build`                                                             | 退出码 0；TypeScript 构建和 Vite 构建通过，转换 1844 个模块                                                     |
+| `cargo fmt --check`                                                      | 退出码 0                                                                                                        |
+| `cargo test --jobs 1`                                                    | 退出码 0；lib 171/171、main 0/0、doc tests 0/0；仅有 MSVC 创建 import library 的 linker message                 |
+| `cargo clippy --jobs 1 -- -D warnings`                                   | 退出码 0                                                                                                        |
+| `pnpm tauri build --debug`                                               | 最终退出码 0；生成 `src-tauri/target/debug/todo-app.exe`，并在 MSI 与 NSIS 目录生成显示名称为 TaskDock 的安装包 |
+| `git diff --check`                                                       | 退出码 0                                                                                                        |
 
 ## 阶段判定
 

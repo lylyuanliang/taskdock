@@ -1,8 +1,9 @@
-import { useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import { t } from "../../i18n";
-import TaskSummaryList from "../tasks/TaskSummaryList";
+import CalendarTaskRail from "./CalendarTaskRail";
 import type { TaskSummaryDto } from "../tasks/taskTypes";
+import "./MonthCalendar.css";
 
 interface MonthCalendarProps {
   errorMessage: string | null;
@@ -33,12 +34,35 @@ function MonthCalendar({
   const [year, monthIndex] = parseMonth(month);
   const calendarDays = buildCalendarDays(year, monthIndex);
   const tasksByDay = groupTasksByDay(tasks);
-  const [selectedDay, setSelectedDay] = useState<SelectedCalendarDay | null>(null);
+  const [selectedDay, setSelectedDay] = useState<SelectedCalendarDay | null>(() =>
+    getInitialSelectedDay(month),
+  );
+  const initialMonthRef = useRef(month);
+  useEffect(() => {
+    if (initialMonthRef.current === month) {
+      return;
+    }
+
+    setSelectedDay({ dateKey: `${month}-01`, month });
+  }, [month]);
   const selectedDateKey = selectedDay?.month === month ? selectedDay.dateKey : null;
   const selectedTasks = selectedDateKey ? (tasksByDay.get(selectedDateKey) ?? []) : [];
 
+  function handleToday() {
+    const today = new Date();
+    const todayMonth = currentLocalMonth(today);
+    if (todayMonth !== month) {
+      onMonthChange(todayMonth);
+    }
+    setSelectedDay({ dateKey: toDateKey(today), month: todayMonth });
+  }
+
   return (
-    <section aria-label={t("calendar.title")} className="month-calendar">
+    <section
+      aria-label={t("calendar.title")}
+      className="month-calendar"
+      data-testid="month-calendar"
+    >
       <header className="month-calendar__toolbar">
         <button
           aria-label={t("calendar.previousMonth")}
@@ -50,6 +74,16 @@ function MonthCalendar({
           <ChevronLeft aria-hidden="true" size={16} />
         </button>
         <h2>{formatMonth(year, monthIndex)}</h2>
+        <button
+          aria-label={`${t("calendar.today")} ${t("calendar.title")}`}
+          className="month-calendar__today-button"
+          onClick={handleToday}
+          title={t("calendar.today")}
+          type="button"
+        >
+          <CalendarDays aria-hidden="true" size={15} />
+          <span>{t("calendar.today")}</span>
+        </button>
         <button
           aria-label={t("calendar.nextMonth")}
           className="month-calendar__month-button"
@@ -92,8 +126,12 @@ function MonthCalendar({
               >
                 <span className="month-calendar__day-number">{day.date.getDate()}</span>
                 <span className="month-calendar__tasks">
-                  {dayTasks.map((task) => (
-                    <span className="month-calendar__task" key={task.id}>
+                  {dayTasks.slice(0, 3).map((task) => (
+                    <span
+                      className={`month-calendar__task month-calendar__task--${task.priority.toLowerCase()}${task.completed ? " is-completed" : ""}`}
+                      key={task.id}
+                      title={task.title}
+                    >
                       <span className="month-calendar__task-title">{task.title}</span>
                       {task.completed ? (
                         <span className="month-calendar__task-status">
@@ -102,33 +140,20 @@ function MonthCalendar({
                       ) : null}
                     </span>
                   ))}
+                  {dayTasks.length > 3 ? (
+                    <span className="month-calendar__task-more">+{dayTasks.length - 3}</span>
+                  ) : null}
                 </span>
               </button>
             );
           })}
         </div>
-        <section aria-live="polite" className="month-calendar__details" id="calendar-day-details">
-          <h2>{selectedDateKey ? formatDayKey(selectedDateKey) : t("calendar.details")}</h2>
-          {errorMessage ? (
-            <p className="task-ledger__error" role="alert">
-              {errorMessage}
-            </p>
-          ) : null}
-          {!errorMessage && isLoading ? (
-            <p className="task-ledger__status" role="status">
-              {t("tasks.loading")}
-            </p>
-          ) : null}
-          {!errorMessage && !isLoading && selectedDateKey === null ? (
-            <p>{t("calendar.selectDay")}</p>
-          ) : null}
-          {!errorMessage && !isLoading && selectedDateKey !== null && selectedTasks.length === 0 ? (
-            <p>{t("calendar.noTasks")}</p>
-          ) : null}
-          {!errorMessage && !isLoading && selectedTasks.length > 0 ? (
-            <TaskSummaryList onToggleCompleted={() => undefined} readOnly tasks={selectedTasks} />
-          ) : null}
-        </section>
+        <CalendarTaskRail
+          errorMessage={errorMessage}
+          isLoading={isLoading}
+          selectedDate={selectedDateKey}
+          tasks={selectedTasks}
+        />
       </div>
     </section>
   );
@@ -169,10 +194,14 @@ function formatDaySummary(date: Date, tasks: TaskSummaryDto[]): string {
   return `${formatDay(date)}, ${tasks.length} ${t("calendar.tasks")}, ${completedCount} ${t("calendar.completed").toLowerCase()}`;
 }
 
-function formatDayKey(key: string): string {
-  const [year, month, day] = key.split("-").map(Number);
+function currentLocalMonth(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
 
-  return formatDay(new Date(year, month - 1, day));
+function getInitialSelectedDay(month: string): SelectedCalendarDay | null {
+  const today = new Date();
+  const todayMonth = currentLocalMonth(today);
+  return todayMonth === month ? { dateKey: toDateKey(today), month } : null;
 }
 
 function formatMonth(year: number, monthIndex: number): string {

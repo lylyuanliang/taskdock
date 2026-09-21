@@ -1,10 +1,12 @@
 import {
   CalendarDays,
+  CalendarClock,
   CheckCircle2,
-  FolderKanban,
   Inbox,
   ListTodo,
   Plus,
+  CircleHelp,
+  Settings,
   SunMedium,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -26,15 +28,19 @@ type NavigationItem = {
 const navigationItems: readonly NavigationItem[] = [
   { icon: SunMedium, labelKey: "navigation.today", view: "today" },
   { icon: Inbox, labelKey: "navigation.inbox", view: "inbox" },
-  { icon: CalendarDays, labelKey: "navigation.upcoming", view: "upcoming" },
+  { icon: CalendarClock, labelKey: "navigation.upcoming", view: "upcoming" },
   { icon: CalendarDays, labelKey: "navigation.calendar", view: "calendar" },
-  { icon: FolderKanban, labelKey: "navigation.projects", view: "projects" },
+  { icon: ListTodo, labelKey: "navigation.projects", view: "projects" },
   { icon: CheckCircle2, labelKey: "navigation.completed", view: "completed" },
 ];
 
 function AppNavigation({ activeView, onCreateTask, onViewChange }: AppNavigationProps) {
   return (
-    <nav aria-label={t("navigation.primary")} className="navigation-rail">
+    <nav
+      aria-label={t("navigation.primary")}
+      className="navigation-rail"
+      data-testid="navigation-rail"
+    >
       <div className="navigation-rail__brand">
         <span aria-hidden="true" className="navigation-rail__brand-mark">
           <ListTodo size={18} />
@@ -62,7 +68,8 @@ function AppNavigation({ activeView, onCreateTask, onViewChange }: AppNavigation
             <button
               aria-current={activeView === item.view ? "page" : undefined}
               aria-label={label}
-              className="navigation-rail__item"
+              className={`navigation-rail__item${activeView === item.view ? " navigation-rail__item--active" : ""}`}
+              data-navigation-item={item.view}
               key={item.view}
               onClick={() => onViewChange(item.view)}
               type="button"
@@ -72,6 +79,28 @@ function AppNavigation({ activeView, onCreateTask, onViewChange }: AppNavigation
             </button>
           );
         })}
+      </div>
+      <div className="navigation-rail__footer">
+        <button
+          aria-disabled="true"
+          className="navigation-rail__item navigation-rail__item--planned"
+          disabled
+          title={t("navigation.planned")}
+          type="button"
+        >
+          <Settings aria-hidden="true" size={18} />
+          <span className="navigation-rail__item-label">{t("navigation.settings")}</span>
+        </button>
+        <button
+          aria-disabled="true"
+          className="navigation-rail__item navigation-rail__item--planned"
+          disabled
+          title={t("navigation.planned")}
+          type="button"
+        >
+          <CircleHelp aria-hidden="true" size={18} />
+          <span className="navigation-rail__item-label">{t("navigation.support")}</span>
+        </button>
       </div>
     </nav>
   );

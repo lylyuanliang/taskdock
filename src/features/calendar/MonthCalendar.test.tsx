@@ -104,7 +104,7 @@ it("renders selected tasks in a read-only ledger with their real project and com
   expect(within(details).getByText("Completed")).toBeInTheDocument();
 });
 
-it("clears the selected day details when the displayed month changes", async () => {
+it("selects the first day when the displayed month changes", async () => {
   const user = userEvent.setup();
   const { rerender } = render(
     <MonthCalendar
@@ -131,9 +131,8 @@ it("clears the selected day details when the displayed month changes", async () 
     />,
   );
 
-  expect(screen.getByRole("heading", { name: "Day details" })).toBeInTheDocument();
-  expect(screen.getByText("Select a day to view tasks.")).toBeInTheDocument();
-  expect(screen.queryByText("No tasks planned for this day.")).not.toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Tuesday, September 1, 2026" })).toBeInTheDocument();
+  expect(screen.getByText("No tasks planned for this day.")).toBeInTheDocument();
   expect(screen.queryByText("Review release notes")).not.toBeInTheDocument();
 });
 

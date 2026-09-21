@@ -1,8 +1,10 @@
-import { render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import TaskSummaryList from "./TaskSummaryList";
 import type { TaskSummaryDto } from "./taskTypes";
+
+afterEach(cleanup);
 
 const openTask: TaskSummaryDto = {
   childCompleted: 0,
@@ -66,4 +68,21 @@ it("shows non-interactive translated completion states in read-only summaries", 
   expect(within(container).getByText("Open")).toBeInTheDocument();
   expect(within(container).getByText("Completed")).toBeInTheDocument();
   expect(within(container).queryByRole("button")).not.toBeInTheDocument();
+});
+
+it("exposes completed state and summary metadata for a task row", () => {
+  render(
+    <TaskSummaryList
+      onToggleCompleted={vi.fn()}
+      tasks={[{ ...completedTask, hasNote: true, scheduledAt: "2026-08-27T14:30:00" }]}
+    />,
+  );
+
+  const row = screen.getByRole("listitem");
+
+  expect(row).toHaveAttribute("data-task-id", "task-completed");
+  expect(row).toHaveAttribute("data-task-state", "completed");
+  expect(row).toHaveClass("task-ledger-row--completed");
+  expect(screen.getByText("14:30")).toBeInTheDocument();
+  expect(screen.getByLabelText("Note")).toBeInTheDocument();
 });

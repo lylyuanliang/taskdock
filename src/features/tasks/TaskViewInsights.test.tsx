@@ -172,6 +172,6 @@ it("lists only actual completed project names", () => {
   );
 
   expect(screen.getByRole("heading", { name: "Completion record" })).toBeInTheDocument();
-  expect(screen.getByText("Release")).toBeInTheDocument();
+  expect(within(screen.getByRole("list")).getByText("Release")).toBeInTheDocument();
   expect(screen.queryByText("Archive")).not.toBeInTheDocument();
 });

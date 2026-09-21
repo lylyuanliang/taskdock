@@ -13,10 +13,10 @@
   --color-transparent: transparent;
   --radius-control: 4px;
   --space-unit: 4px;
-  --layout-navigation-wide: 280px;
+  --layout-navigation-wide: 240px;
   --layout-navigation-compact: 72px;
-  --layout-workspace-bar-height: 60px;
-  --layout-page-gutter: 24px;
+  --layout-workspace-bar-height: 48px;
+  --layout-page-gutter: 16px;
   --layout-page-gutter-compact: 16px;
   --layout-panel-gap: 12px;
   --elevation-recessed: inset 0 2px 4px color-mix(in srgb, var(--color-canvas) 70%, transparent);
@@ -36,10 +36,10 @@
   --color-transparent: transparent;
   --radius-control: 4px;
   --space-unit: 4px;
-  --layout-navigation-wide: 280px;
+  --layout-navigation-wide: 240px;
   --layout-navigation-compact: 72px;
-  --layout-workspace-bar-height: 60px;
-  --layout-page-gutter: 24px;
+  --layout-workspace-bar-height: 48px;
+  --layout-page-gutter: 16px;
   --layout-page-gutter-compact: 16px;
   --layout-panel-gap: 12px;
   --elevation-recessed: inset 0 2px 4px
@@ -60,10 +60,10 @@
   --color-transparent: transparent;
   --radius-control: 4px;
   --space-unit: 4px;
-  --layout-navigation-wide: 280px;
+  --layout-navigation-wide: 240px;
   --layout-navigation-compact: 72px;
-  --layout-workspace-bar-height: 60px;
-  --layout-page-gutter: 24px;
+  --layout-workspace-bar-height: 48px;
+  --layout-page-gutter: 16px;
   --layout-page-gutter-compact: 16px;
   --layout-panel-gap: 12px;
   --elevation-recessed: none;

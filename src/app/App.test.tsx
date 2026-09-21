@@ -160,6 +160,17 @@ afterEach(() => {
   cleanup();
 });
 
+async function findTaskTitle(title: string): Promise<HTMLElement> {
+  const matches = await screen.findAllByText(title);
+  const firstMatch = matches[0];
+
+  if (!firstMatch) {
+    throw new Error(`Expected task title to be rendered: ${title}`);
+  }
+
+  return firstMatch;
+}
+
 it("reloads the Inbox after task mutations and ignores an older Inbox response", async () => {
   const initialInboxRequest = createDeferred<(typeof savedTask)[]>();
   const subscribedInboxRequest = createDeferred<(typeof savedTask)[]>();
@@ -295,7 +306,7 @@ it("reloads the active Today view after task mutations and ignores an older fail
     eventTodayRequest.resolve([todaySummary]);
   });
 
-  expect(await screen.findByText(todaySummary.title)).toBeInTheDocument();
+  expect(await findTaskTitle(todaySummary.title)).toBeInTheDocument();
 });
 
 it("keeps one active task mutation listener in StrictMode", async () => {
@@ -383,7 +394,7 @@ it("refreshes an open editor when task mutation listener registration completes 
 
   render(<App />);
 
-  await screen.findByText("Review schema");
+  await findTaskTitle("Review schema");
   await user.click(screen.getByRole("button", { name: "Edit task Review schema" }));
   await screen.findByDisplayValue("Review schema");
   expect(invokeMock.mock.calls.filter(([command]) => command === "get_task_editor")).toHaveLength(
@@ -595,7 +606,7 @@ it("refreshes an open editor from any task mutation event", async () => {
 
   render(<App />);
 
-  await screen.findByText("Review schema");
+  await findTaskTitle("Review schema");
   await user.click(screen.getByRole("button", { name: "Edit task Review schema" }));
   await screen.findByDisplayValue("Review schema");
 
@@ -637,7 +648,7 @@ it("refreshes the inbox with the saved task", async () => {
   await user.type(screen.getByLabelText("Task title"), "Review schema");
   await user.click(screen.getByRole("button", { name: "Save task" }));
 
-  expect(await screen.findByText("Review schema")).toBeInTheDocument();
+  expect(await findTaskTitle("Review schema")).toBeInTheDocument();
   expect(invokeMock).toHaveBeenNthCalledWith(1, "list_inbox");
   expect(invokeMock).toHaveBeenNthCalledWith(2, "list_projects");
   expect(invokeMock).toHaveBeenNthCalledWith(3, "create_task_editor", {
@@ -668,7 +679,7 @@ it("edits an existing task and renders the refreshed result", async () => {
 
   render(<App />);
 
-  await screen.findByText("Review schema");
+  await findTaskTitle("Review schema");
   await user.click(screen.getByRole("button", { name: "Edit task Review schema" }));
 
   const titleInput = screen.getByLabelText("Task title");
@@ -692,7 +703,7 @@ it("edits an existing task and renders the refreshed result", async () => {
     },
     tagNames: [],
   });
-  expect(await screen.findByText("Review release")).toBeInTheDocument();
+  expect(await findTaskTitle("Review release")).toBeInTheDocument();
 });
 
 it("keeps the newer editor open when an earlier editor save resolves late", async () => {
@@ -721,7 +732,7 @@ it("keeps the newer editor open when an earlier editor save resolves late", asyn
 
   render(<App />);
 
-  await screen.findByText("Review schema");
+  await findTaskTitle("Review schema");
   await user.click(screen.getByRole("button", { name: "Edit task Review schema" }));
   await screen.findByDisplayValue("Review schema");
   await user.click(screen.getByRole("button", { name: "Update task" }));
@@ -766,7 +777,7 @@ it("does not reload or close a newer editor after an earlier subtask completion 
 
   render(<App />);
 
-  await screen.findByText("Review schema");
+  await findTaskTitle("Review schema");
   await user.click(screen.getByRole("button", { name: "Edit task Review schema" }));
   await screen.findByRole("checkbox", { name: "Complete task Confirm owners" });
   await user.click(screen.getByRole("checkbox", { name: "Complete task Confirm owners" }));
@@ -1042,7 +1053,7 @@ it("opens the Inbox editor from the global navigation command", async () => {
   expect(screen.getByLabelText("Task title")).toBeInTheDocument();
 });
 
-it("shows a neutral project workspace prompt before a project is selected", async () => {
+it("auto-selects the first available project in the project workspace", async () => {
   const user = userEvent.setup();
 
   invokeMock.mockReset();
@@ -1053,7 +1064,8 @@ it("shows a neutral project workspace prompt before a project is selected", asyn
   await screen.findByText("No tasks in inbox.");
   await user.click(screen.getByRole("button", { name: "Projects" }));
 
-  expect(await screen.findByText("Select a project to view its tasks.")).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "Release", level: 2 })).toBeInTheDocument();
+  expect(screen.getByTestId("project-task-board")).toBeInTheDocument();
 });
 
 it("keeps the search command in the global workspace bar", async () => {
@@ -1437,7 +1449,7 @@ it("persists completion before rendering the refreshed empty inbox", async () =>
 
   render(<App />);
 
-  await screen.findByText("Review schema");
+  await findTaskTitle("Review schema");
   await user.click(screen.getByRole("checkbox", { name: "Complete task task-1" }));
 
   expect(invokeMock).toHaveBeenCalledWith("complete_task", { id: "task-1" });
@@ -1491,7 +1503,7 @@ it("restores a completed task and shows it again in the inbox", async () => {
 
   await user.click(screen.getByRole("button", { name: "Inbox" }));
 
-  expect(await screen.findByText("Review schema")).toBeInTheDocument();
+  expect(await findTaskTitle("Review schema")).toBeInTheDocument();
   expect(invokeMock).toHaveBeenCalledWith("list_tasks", { view: { kind: "completed" } });
   expect(invokeMock).toHaveBeenLastCalledWith("list_inbox");
 });
@@ -1553,7 +1565,7 @@ it("keeps a deferred summary request scoped to the current view during rapid nav
     completedRequest.resolve([completedSummary]);
   });
 
-  expect(await screen.findByText("Completed-only task")).toBeInTheDocument();
+  expect(await findTaskTitle("Completed-only task")).toBeInTheDocument();
 });
 
 it("shows a current summary request error without a loading announcement", async () => {
@@ -1641,7 +1653,7 @@ it("refreshes Inbox after a completed-view restore succeeds during navigation", 
     restoreRequest.resolve(savedTask);
   });
 
-  expect(await screen.findByText("Review schema")).toBeInTheDocument();
+  expect(await findTaskTitle("Review schema")).toBeInTheDocument();
   expect(invokeMock).toHaveBeenLastCalledWith("list_inbox");
 });
 
@@ -1676,7 +1688,7 @@ it("refreshes Completed after an inbox completion succeeds during navigation", a
     completionRequest.resolve(completedTask);
   });
 
-  expect(await screen.findByText("Review schema")).toBeInTheDocument();
+  expect(await findTaskTitle("Review schema")).toBeInTheDocument();
   expect(invokeMock).toHaveBeenLastCalledWith("list_tasks", { view: { kind: "completed" } });
 });
 
@@ -1694,7 +1706,7 @@ it("hides a ready Today summary immediately when switching to Upcoming", async (
 
   await screen.findByText("No tasks in inbox.");
   await user.click(screen.getByRole("button", { name: "Today" }));
-  await screen.findByText("Today-only task");
+  await findTaskTitle("Today-only task");
   await user.click(screen.getByRole("button", { name: "Upcoming" }));
 
   expect(screen.queryByText("Today-only task")).not.toBeInTheDocument();
