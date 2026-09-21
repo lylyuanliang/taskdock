@@ -233,7 +233,9 @@ describe("QuickPanel", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "Open quick panel" }));
-    await user.click(screen.getByRole("button", { name: "Open main window" }));
+    const openMainButton = screen.getByRole("button", { name: "Open main window" });
+    expect(openMainButton.querySelector("svg")).toHaveClass("lucide-panel-top-open");
+    await user.click(openMainButton);
 
     expect(onOpenMainWindow).toHaveBeenCalledOnce();
     expect(startDragging).not.toHaveBeenCalled();
@@ -263,6 +265,9 @@ describe("QuickPanel", () => {
 
     expect(onExitApp).toHaveBeenCalledOnce();
     expect(startDragging).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Exit TaskDock" }).querySelector("svg")).toHaveClass(
+      "lucide-power",
+    );
   });
 
   it("exposes a draggable header and a directional collapse control when expanded", async () => {
@@ -285,7 +290,7 @@ describe("QuickPanel", () => {
 
     expect(dragHeader).toHaveAttribute("title", "Move quick panel");
     expect(dragHeader.querySelector("svg")).toHaveClass("lucide-grip-horizontal");
-    expect(collapseButton.querySelector("svg")).toHaveClass("lucide-minus");
+    expect(collapseButton.querySelector("svg")).toHaveClass("lucide-chevron-up");
     expect(collapseButton.closest(".quick-panel__header")).not.toBeNull();
   });
 

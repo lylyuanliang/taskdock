@@ -1,6 +1,7 @@
 import {
   Check,
   CheckCircle2,
+  ChevronUp,
   Circle,
   FileText,
   FolderPlus,
@@ -11,6 +12,7 @@ import {
   Minus,
   PanelTopOpen,
   Plus,
+  Power,
   X,
 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -572,7 +574,7 @@ export function QuickPanel({
                 title={toggleLabel}
                 type="button"
               >
-                <Minus aria-hidden="true" size={14} strokeWidth={1.75} />
+                <ChevronUp aria-hidden="true" size={14} strokeWidth={1.75} />
               </button>
               {onExitApp ? (
                 <button
@@ -583,7 +585,7 @@ export function QuickPanel({
                   title={t("quickPanel.exit")}
                   type="button"
                 >
-                  <X aria-hidden="true" size={14} strokeWidth={1.75} />
+                  <Power aria-hidden="true" size={14} strokeWidth={1.75} />
                 </button>
               ) : null}
             </div>
