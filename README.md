@@ -14,21 +14,24 @@ TaskDock is a local-first desktop task manager for personal work, software deliv
 - Inspect scheduled tasks by month and by selected day.
 - Use English or Simplified Chinese, and switch between the included themes.
 - Open a movable quick panel for lightweight desktop task access.
-- Keep application data local in SQLite; the current release does not require an account or cloud service.
+- Keep application data local in SQLite; the current development branch also implements WebDAV two-way sync with default end-to-end encryption, conflict handling, and pause/resume controls.
 
 ## Planned, Not Yet Delivered
 
-- WebDAV synchronization, with compatibility guidance for providers such as Nutstore.
 - An extensible AI service boundary based on OpenAPI-compatible services.
 - A local web portal that works with the Windows application on the same computer.
 - Android and broader cross-platform support.
 - Attachments, comments, and richer project collaboration workflows.
+- Remote WebDAV history browsing and rollback.
+
+M4 WebDAV synchronization is not included in the published `v0.2.0` installer yet. The current development branch supports one WebDAV configuration and one current remote snapshot; a real WebDAV service and a Windows installer still need manual acceptance before release.
 
 ## Documentation
 
 - [Architecture](docs/architecture.md): runtime boundaries, data ownership, and extension strategy. The primary project documents are maintained in Simplified Chinese.
 - [Roadmap](docs/roadmap.md): delivery milestones, current phase, and exit criteria.
 - [Known issues and release risks](docs/known-issues.md): confirmed issues, validation gaps, and expected repair milestones.
+- [M4 WebDAV E2E verification](tests/e2e/sync-flow.md): the automated coverage boundary for sync settings, conflicts, and pause/resume.
 
 ## Screens And Naming
 
@@ -166,7 +169,8 @@ Calendar membership is driven only by a task's `scheduledAt` value. A due date i
 
 - TaskDock is local-first: the current application persists task and project data in SQLite under the operating system's application-data directory.
 - Do not commit local databases, environment files, build artifacts, test reports, or handoff notes. Store local UI captures under `artifacts/screenshots/`; that dedicated directory is ignored. Do not ignore all `*.png` files because Tauri application icons are source assets.
-- Synchronization and AI integrations are future work. Do not place provider credentials in source files or commits.
+- The current development branch uses WebDAV as its only synchronization protocol. WebDAV and encryption credentials are stored through Windows Credential Manager and are not written to source files, SQLite, remote snapshots, or commits.
+- AI integration remains future work. Do not place any provider credentials in source files or commits.
 
 ## Project Structure
 

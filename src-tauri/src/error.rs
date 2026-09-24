@@ -3,10 +3,11 @@ use std::fmt::{Display, Formatter};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum AppErrorKind {
     Validation,
-    #[expect(dead_code, reason = "M2 AI 和 WebDAV 配置校验接入前预留配置错误分类")]
     Configuration,
+    Encryption,
     Conflict,
     NotFound,
+    Remote,
     Storage,
     Internal,
 }

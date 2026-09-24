@@ -18,6 +18,7 @@ use crate::{
     },
     error::AppError,
     reminder_worker::ReminderRescanRequester,
+    sync_worker::SyncWorker,
     task_mutation_notification::{TaskMutationEvent, TaskMutationNotifier},
     AppState,
 };
@@ -127,13 +128,15 @@ pub(crate) fn create_task(
     state: State<'_, AppState>,
     draft: Option<Value>,
 ) -> Result<TaskDto, CommandError> {
-    create_task_with_services_and_rescan_and_notify(
+    let result = create_task_with_services_and_rescan_and_notify(
         state.tasks.as_ref(),
         state.projects.as_ref(),
         &state.reminder_worker,
         &state.task_mutation_notifier,
         draft,
-    )
+    );
+    request_sync_after_mutation(&state.sync_worker, result.is_ok());
+    result
 }
 
 #[tauri::command]
@@ -142,14 +145,16 @@ pub(crate) fn update_task(
     id: Option<Value>,
     patch: Option<Value>,
 ) -> Result<TaskDto, CommandError> {
-    update_task_with_services_and_rescan_and_notify(
+    let result = update_task_with_services_and_rescan_and_notify(
         state.tasks.as_ref(),
         state.projects.as_ref(),
         &state.reminder_worker,
         &state.task_mutation_notifier,
         id,
         patch,
-    )
+    );
+    request_sync_after_mutation(&state.sync_worker, result.is_ok());
+    result
 }
 
 #[tauri::command]
@@ -157,12 +162,14 @@ pub(crate) fn complete_task(
     state: State<'_, AppState>,
     id: Option<Value>,
 ) -> Result<TaskDto, CommandError> {
-    complete_task_with_service_and_rescan_and_notify(
+    let result = complete_task_with_service_and_rescan_and_notify(
         state.tasks.as_ref(),
         &state.reminder_worker,
         &state.task_mutation_notifier,
         id,
-    )
+    );
+    request_sync_after_mutation(&state.sync_worker, result.is_ok());
+    result
 }
 
 #[tauri::command]
@@ -179,14 +186,16 @@ pub(crate) fn create_task_editor(
     draft: Option<Value>,
     tag_names: Option<Value>,
 ) -> Result<TaskEditorDto, CommandError> {
-    create_task_editor_with_services_and_rescan_and_notify(
+    let result = create_task_editor_with_services_and_rescan_and_notify(
         state.tasks.as_ref(),
         state.projects.as_ref(),
         &state.reminder_worker,
         &state.task_mutation_notifier,
         draft,
         tag_names,
-    )
+    );
+    request_sync_after_mutation(&state.sync_worker, result.is_ok());
+    result
 }
 
 #[tauri::command]
@@ -197,7 +206,7 @@ pub(crate) fn update_task_editor(
     patch: Option<Value>,
     tag_names: Option<Value>,
 ) -> Result<TaskEditorDto, CommandError> {
-    update_task_editor_with_services_and_rescan_and_notify(
+    let result = update_task_editor_with_services_and_rescan_and_notify(
         state.tasks.as_ref(),
         state.projects.as_ref(),
         &state.reminder_worker,
@@ -206,7 +215,9 @@ pub(crate) fn update_task_editor(
         expected_revision,
         patch,
         tag_names,
-    )
+    );
+    request_sync_after_mutation(&state.sync_worker, result.is_ok());
+    result
 }
 
 #[tauri::command]
@@ -215,13 +226,15 @@ pub(crate) fn create_subtask(
     parent_id: Option<Value>,
     title: Option<Value>,
 ) -> Result<TaskDto, CommandError> {
-    create_subtask_with_service_and_rescan_and_notify(
+    let result = create_subtask_with_service_and_rescan_and_notify(
         state.tasks.as_ref(),
         &state.reminder_worker,
         &state.task_mutation_notifier,
         parent_id,
         title,
-    )
+    );
+    request_sync_after_mutation(&state.sync_worker, result.is_ok());
+    result
 }
 
 #[tauri::command]
@@ -617,6 +630,14 @@ where
 {
     if let Err(error) = rescan_requester.request_rescan() {
         eprintln!("reminder background rescan request failed: {error}");
+    }
+}
+
+fn request_sync_after_mutation(worker: &SyncWorker, succeeded: bool) {
+    if succeeded {
+        if let Err(error) = worker.request_sync() {
+            eprintln!("sync background request failed: {error}");
+        }
     }
 }
 

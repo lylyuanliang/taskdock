@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     path::{Path, PathBuf},
     sync::{Arc, Barrier},
     time::Duration,
@@ -10,9 +11,14 @@ use uuid::Uuid;
 
 use crate::{
     domain::{
-        ports::{ProjectRepository, SubtaskInsertOutcome, SubtaskRepository, TaskRepository},
+        ports::{
+            ProjectRepository, SubtaskInsertOutcome, SubtaskRepository, SyncRepository,
+            TaskRepository,
+        },
         project::Project,
         recurrence::{complete_task, Frequency, RecurrenceRule},
+        sync::{SyncConfig, SyncEntity, SyncEntityKind, SyncSnapshot, SyncState, SyncStatus},
+        sync_merge::SyncFieldConflict,
         task::{Priority, ReminderClaimStateUpdate, Task, TaskPatch},
         task_service::TaskService,
     },
@@ -90,7 +96,7 @@ fn concurrent_file_connections_apply_migrations_once() -> Result<(), Box<dyn std
             row.get(0)
         })?;
 
-    assert_eq!(applied_versions, vec![1, 2, 3, 4, 5, 6, 7]);
+    assert_eq!(applied_versions, vec![1, 2, 3, 4, 5, 6, 7, 8]);
     assert_eq!(task_rows, 0);
 
     Ok(())
@@ -268,7 +274,7 @@ fn task_revision_migration_upgrades_version_five_without_losing_reminder_data(
     assert_eq!(row.3, "2026-09-09T08:55:00Z");
     assert_eq!(row.4, claim_token.to_string());
     assert_eq!(row.5, 1);
-    assert_eq!(applied_versions, vec![1, 2, 3, 4, 5, 6, 7]);
+    assert_eq!(applied_versions, vec![1, 2, 3, 4, 5, 6, 7, 8]);
 
     Ok(())
 }
@@ -328,7 +334,7 @@ fn reminder_delivery_lease_migration_upgrades_version_six_without_losing_deliver
 
     assert_eq!(row.0, delivered_at);
     assert_eq!(row.1, None);
-    assert_eq!(applied_versions, vec![1, 2, 3, 4, 5, 6, 7]);
+    assert_eq!(applied_versions, vec![1, 2, 3, 4, 5, 6, 7, 8]);
 
     Ok(())
 }
@@ -1349,4 +1355,279 @@ fn sqlite_repository_lists_only_incomplete_inbox_tasks() {
     repository.insert(&completed_task).unwrap();
 
     assert_eq!(repository.list_inbox().unwrap(), vec![inbox_task]);
+}
+
+#[test]
+fn sqlite_sync_configuration_and_state_are_singletons() {
+    let repository = SqliteTaskRepository::in_memory().unwrap();
+    let config = SyncConfig {
+        endpoint: "https://dav.example.test/remote.php/dav/files/user".to_owned(),
+        remote_directory: "/todo".to_owned(),
+        username: "user".to_owned(),
+        encryption_enabled: true,
+        paused: false,
+    };
+
+    assert_eq!(repository.get_sync_config().unwrap(), None);
+    repository.save_sync_config(&config).unwrap();
+    assert_eq!(repository.get_sync_config().unwrap(), Some(config.clone()));
+
+    let mut updated_config = config;
+    updated_config.paused = true;
+    repository.save_sync_config(&updated_config).unwrap();
+    assert_eq!(repository.get_sync_config().unwrap(), Some(updated_config));
+
+    let mut state = SyncState {
+        status: SyncStatus::Synced,
+        last_synced_at: Some(fixed_utc(2026, 9, 23, 12, 0, 0)),
+        last_error_code: None,
+        counters: Default::default(),
+        baseline_snapshot_id: Some(Uuid::new_v4()),
+    };
+    state.counters.pending_upload = 2;
+    state.counters.pending_download = 3;
+    state.counters.conflicts = 1;
+    repository.save_sync_state(&state).unwrap();
+    assert_eq!(repository.get_sync_state().unwrap(), state);
+}
+
+#[test]
+fn sqlite_sync_snapshot_round_trip_reads_and_applies_tasks_and_projects() {
+    let repository = SqliteTaskRepository::in_memory().unwrap();
+    let mut task = Task::for_test("Sync source task".to_owned());
+    task.note = "local note".to_owned();
+    repository.insert(&task).unwrap();
+    let mut project = Project::new("Sync source project".to_owned()).unwrap();
+    repository.insert_project(&project).unwrap();
+
+    let snapshot = repository.get_local_sync_snapshot().unwrap();
+    assert_eq!(snapshot.entities.len(), 2);
+
+    project.name = "Remote project name".to_owned();
+    project.updated_at = fixed_utc(2026, 9, 23, 14, 0, 0);
+    let mut remote_task = task.clone();
+    remote_task.note = "remote note".to_owned();
+    remote_task.updated_at = fixed_utc(2026, 9, 23, 14, 0, 0);
+    let remote_snapshot = SyncSnapshot::new(
+        Uuid::new_v4(),
+        vec![
+            SyncEntity::from_task(&remote_task).unwrap(),
+            SyncEntity::from_project(&project).unwrap(),
+        ],
+    );
+    repository.apply_sync_snapshot(&remote_snapshot).unwrap();
+
+    assert_eq!(
+        repository.get(task.id).unwrap().unwrap().note,
+        "remote note"
+    );
+    assert_eq!(
+        repository.get_project(project.id).unwrap().unwrap().name,
+        "Remote project name"
+    );
+}
+
+#[test]
+fn sqlite_sync_snapshot_applies_task_tombstones() {
+    let repository = SqliteTaskRepository::in_memory().unwrap();
+    let task = Task::for_test("Delete from remote".to_owned());
+    repository.insert(&task).unwrap();
+    let mut tombstone = SyncEntity::new(task.id, SyncEntityKind::Task, BTreeMap::new());
+    tombstone.deleted = true;
+
+    repository
+        .apply_sync_snapshot(&SyncSnapshot::new(Uuid::new_v4(), vec![tombstone]))
+        .unwrap();
+
+    assert_eq!(repository.get(task.id).unwrap(), None);
+}
+
+#[test]
+fn sqlite_sync_replace_snapshot_removes_local_entities_absent_from_remote() {
+    let repository = SqliteTaskRepository::in_memory().unwrap();
+    let local_task = Task::for_test("Local only".to_owned());
+    let remote_task = Task::for_test("Remote only".to_owned());
+    repository.insert(&local_task).unwrap();
+
+    let remote_snapshot = SyncSnapshot::new(
+        Uuid::new_v4(),
+        vec![SyncEntity::from_task(&remote_task).unwrap()],
+    );
+    repository.replace_sync_snapshot(&remote_snapshot).unwrap();
+
+    assert_eq!(repository.get(local_task.id).unwrap(), None);
+    assert_eq!(
+        repository.get(remote_task.id).unwrap().unwrap().title,
+        "Remote only"
+    );
+}
+
+#[test]
+fn sqlite_sync_baseline_round_trip_is_idempotent() {
+    let repository = SqliteTaskRepository::in_memory().unwrap();
+    let entity_id = Uuid::new_v4();
+    let snapshot_id = Uuid::new_v4();
+    let mut fields = BTreeMap::new();
+    fields.insert("title".to_owned(), serde_json::json!("Baseline task"));
+    let snapshot = SyncSnapshot {
+        format_version: 1,
+        snapshot_id,
+        generated_at: fixed_utc(2026, 9, 23, 13, 0, 0),
+        entities: vec![SyncEntity::new(entity_id, SyncEntityKind::Task, fields)],
+    };
+
+    repository.save_sync_baseline(&snapshot).unwrap();
+    let state = SyncState {
+        baseline_snapshot_id: Some(snapshot_id),
+        ..SyncState::default()
+    };
+    repository.save_sync_state(&state).unwrap();
+    assert_eq!(
+        repository.get_sync_baseline().unwrap(),
+        Some(snapshot.clone())
+    );
+
+    let mut updated_snapshot = snapshot;
+    updated_snapshot.entities[0]
+        .fields
+        .insert("title".to_owned(), serde_json::json!("Updated baseline"));
+    repository.save_sync_baseline(&updated_snapshot).unwrap();
+    assert_eq!(
+        repository.get_sync_baseline().unwrap(),
+        Some(updated_snapshot)
+    );
+}
+
+#[test]
+fn sqlite_sync_conflicts_round_trip_and_resolve_idempotently() {
+    let repository = SqliteTaskRepository::in_memory().unwrap();
+    let conflict = SyncFieldConflict {
+        entity_id: Uuid::new_v4(),
+        entity_kind: SyncEntityKind::Task,
+        field_name: "title".to_owned(),
+        local_value: Some(serde_json::json!("Local title")),
+        remote_value: Some(serde_json::json!("Remote title")),
+        base_value: Some(serde_json::json!("Base title")),
+    };
+
+    repository.save_sync_conflict(&conflict).unwrap();
+    assert_eq!(
+        repository.list_sync_conflicts().unwrap(),
+        vec![conflict.clone()]
+    );
+    repository.save_sync_conflict(&conflict).unwrap();
+    assert_eq!(
+        repository.list_sync_conflicts().unwrap(),
+        vec![conflict.clone()]
+    );
+
+    repository
+        .resolve_sync_conflict(
+            conflict.entity_id,
+            conflict.entity_kind,
+            &conflict.field_name,
+            "acceptRemote",
+        )
+        .unwrap();
+    assert!(repository.list_sync_conflicts().unwrap().is_empty());
+    repository
+        .resolve_sync_conflict(
+            conflict.entity_id,
+            conflict.entity_kind,
+            &conflict.field_name,
+            "keepLocal",
+        )
+        .unwrap();
+    assert!(repository.list_sync_conflicts().unwrap().is_empty());
+}
+
+#[test]
+fn sqlite_sync_conflict_resolution_applies_remote_value_and_creates_a_copy() {
+    let repository = SqliteTaskRepository::in_memory().unwrap();
+    let mut task = Task::for_test("Local title".to_owned());
+    repository.insert(&task).unwrap();
+    let conflict = SyncFieldConflict {
+        entity_id: task.id,
+        entity_kind: SyncEntityKind::Task,
+        field_name: "title".to_owned(),
+        local_value: Some(serde_json::json!("Local title")),
+        remote_value: Some(serde_json::json!("Remote title")),
+        base_value: Some(serde_json::json!("Base title")),
+    };
+
+    repository.save_sync_conflict(&conflict).unwrap();
+    repository
+        .resolve_sync_conflict(
+            conflict.entity_id,
+            conflict.entity_kind,
+            &conflict.field_name,
+            "acceptRemote",
+        )
+        .unwrap();
+    assert_eq!(
+        repository.get(task.id).unwrap().unwrap().title,
+        "Remote title"
+    );
+
+    task = repository.get(task.id).unwrap().unwrap();
+    let copy_conflict = SyncFieldConflict {
+        local_value: Some(serde_json::json!("Remote title")),
+        remote_value: Some(serde_json::json!("Another remote title")),
+        base_value: Some(serde_json::json!("Base title")),
+        ..conflict
+    };
+    repository.save_sync_conflict(&copy_conflict).unwrap();
+    repository
+        .resolve_sync_conflict(
+            copy_conflict.entity_id,
+            copy_conflict.entity_kind,
+            &copy_conflict.field_name,
+            "createConflictCopy",
+        )
+        .unwrap();
+
+    let snapshot = repository.get_local_sync_snapshot().unwrap();
+    let task_entities = snapshot
+        .entities
+        .iter()
+        .filter(|entity| entity.kind == SyncEntityKind::Task)
+        .collect::<Vec<_>>();
+    assert_eq!(task_entities.len(), 2);
+    assert!(task_entities.iter().any(|entity| {
+        entity.id == task.id && entity.fields["title"] == serde_json::json!("Remote title")
+    }));
+    assert!(task_entities.iter().any(|entity| {
+        entity.id != task.id
+            && entity.fields["title"] == serde_json::json!("Another remote title（冲突副本）")
+    }));
+}
+
+#[test]
+fn sqlite_sync_conflict_resolution_applies_remote_delete() {
+    let repository = SqliteTaskRepository::in_memory().unwrap();
+    let task = Task::for_test("Delete through conflict".to_owned());
+    repository.insert(&task).unwrap();
+    let entity = SyncEntity::from_task(&task).unwrap();
+    let fields = serde_json::Value::Object(entity.fields.clone().into_iter().collect());
+    let conflict = SyncFieldConflict {
+        entity_id: task.id,
+        entity_kind: SyncEntityKind::Task,
+        field_name: "__entity__".to_owned(),
+        local_value: Some(fields.clone()),
+        remote_value: None,
+        base_value: Some(fields),
+    };
+
+    repository.save_sync_conflict(&conflict).unwrap();
+    repository
+        .resolve_sync_conflict(
+            conflict.entity_id,
+            conflict.entity_kind,
+            &conflict.field_name,
+            "acceptRemote",
+        )
+        .unwrap();
+
+    assert_eq!(repository.get(task.id).unwrap(), None);
+    assert!(repository.list_sync_conflicts().unwrap().is_empty());
 }

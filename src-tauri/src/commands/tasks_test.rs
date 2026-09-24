@@ -435,7 +435,7 @@ fn editor_update_preserves_an_unchanged_archived_project_association() {
 
 #[test]
 fn create_task_returns_serializable_validation_error() {
-    let service = TaskService::new(RecordingRepository::default());
+    let service = TaskService::new(RecordingRepository);
 
     let result = create_task_with_service(
         &service,
@@ -734,7 +734,7 @@ fn update_task_rejects_restoring_a_completed_recurring_instance_and_preserves_th
 
 #[test]
 fn list_inbox_with_service_returns_serializable_task_dtos() {
-    let service = TaskService::new(RecordingRepository::default());
+    let service = TaskService::new(RecordingRepository);
 
     let result = list_inbox_with_service(&service).unwrap();
 
@@ -1379,9 +1379,7 @@ fn editor_update_rejects_a_legacy_yearly_recurrence_string() {
         Some(serde_json::json!([])),
     );
 
-    let error = result
-        .err()
-        .expect("editor patches must reject legacy recurrence strings");
+    let error = result.expect_err("editor patches must reject legacy recurrence strings");
     assert_eq!(
         error,
         CommandError {

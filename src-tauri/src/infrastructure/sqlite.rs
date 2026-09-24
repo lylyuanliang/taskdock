@@ -1,4 +1,5 @@
 use std::{
+    collections::{BTreeMap, BTreeSet},
     path::Path,
     sync::{Arc, Mutex},
     time::Duration,
@@ -11,11 +12,13 @@ use uuid::Uuid;
 use crate::{
     domain::{
         ports::{
-            ProjectRepository, SubtaskInsertOutcome, SubtaskRepository, TaskEditor,
+            ProjectRepository, SubtaskInsertOutcome, SubtaskRepository, SyncRepository, TaskEditor,
             TaskEditorRepository, TaskRepository,
         },
         project::Project,
         recurrence::TaskCompletion,
+        sync::{SyncConfig, SyncEntity, SyncEntityKind, SyncSnapshot, SyncState},
+        sync_merge::SyncFieldConflict,
         task::{Priority, RecurrenceRule, ReminderClaimStateUpdate, Task},
         task_query::{TaskSummaryDto, TaskView},
     },
@@ -32,6 +35,7 @@ const REMINDER_CLAIM_TOKEN_MIGRATION: &str =
 const TASK_REVISION_MIGRATION: &str = include_str!("../../migrations/0006_task_revision.sql");
 const REMINDER_DELIVERY_LEASE_MIGRATION: &str =
     include_str!("../../migrations/0007_reminder_delivery_lease.sql");
+const SYNC_MIGRATION: &str = include_str!("../../migrations/0008_sync.sql");
 const MIGRATIONS: &[(i64, &str)] = &[
     (1, INITIAL_MIGRATION),
     (2, DAILY_WORKFLOW_MIGRATION),
@@ -40,6 +44,7 @@ const MIGRATIONS: &[(i64, &str)] = &[
     (5, REMINDER_CLAIM_TOKEN_MIGRATION),
     (6, TASK_REVISION_MIGRATION),
     (7, REMINDER_DELIVERY_LEASE_MIGRATION),
+    (8, SYNC_MIGRATION),
 ];
 const STORAGE_ERROR_CODE: &str = "storage.unavailable";
 const STORAGE_ERROR_KEY: &str = "errors.storage.unavailable";
@@ -251,6 +256,339 @@ impl SubtaskRepository for SqliteTaskRepository {
     ) -> Result<SubtaskInsertOutcome, AppError> {
         self.with_connection(|connection| {
             insert_subtask_from_parent_snapshot(connection, parent_snapshot, subtask)
+        })
+    }
+}
+
+impl SyncRepository for SqliteTaskRepository {
+    fn get_local_sync_snapshot(&self) -> Result<SyncSnapshot, AppError> {
+        self.with_connection(|connection| read_local_sync_snapshot(connection))
+    }
+
+    fn apply_sync_snapshot(&self, snapshot: &SyncSnapshot) -> Result<(), AppError> {
+        self.with_connection(|connection| {
+            let transaction = connection.transaction().map_err(storage_error)?;
+            apply_sync_entities(&transaction, &snapshot.entities)?;
+            transaction.commit().map_err(storage_error)
+        })
+    }
+
+    fn replace_sync_snapshot(&self, snapshot: &SyncSnapshot) -> Result<(), AppError> {
+        self.with_connection(|connection| {
+            let transaction = connection.transaction().map_err(storage_error)?;
+            let local_snapshot = read_local_sync_snapshot(&transaction)?;
+            let remote_keys = snapshot
+                .entities
+                .iter()
+                .map(|entity| (entity.kind, entity.id))
+                .collect::<BTreeSet<_>>();
+            let tombstones = local_snapshot
+                .entities
+                .into_iter()
+                .filter(|entity| !remote_keys.contains(&(entity.kind, entity.id)))
+                .map(|entity| {
+                    let mut tombstone = SyncEntity::new(entity.id, entity.kind, BTreeMap::new());
+                    tombstone.deleted = true;
+                    tombstone
+                })
+                .collect::<Vec<_>>();
+            apply_sync_entities(&transaction, &tombstones)?;
+            apply_sync_entities(&transaction, &snapshot.entities)?;
+            transaction.commit().map_err(storage_error)
+        })
+    }
+
+    fn get_sync_config(&self) -> Result<Option<SyncConfig>, AppError> {
+        self.with_connection(|connection| {
+            connection
+                .query_row(
+                    "SELECT endpoint, remote_directory, username, encryption_enabled, paused \
+                     FROM todo_sync_config WHERE id = 1",
+                    params![],
+                    |row| {
+                        Ok(SyncConfig {
+                            endpoint: row.get(0)?,
+                            remote_directory: row.get(1)?,
+                            username: row.get(2)?,
+                            encryption_enabled: row.get::<_, i64>(3)? != 0,
+                            paused: row.get::<_, i64>(4)? != 0,
+                        })
+                    },
+                )
+                .optional()
+                .map_err(storage_error)
+        })
+    }
+
+    fn save_sync_config(&self, config: &SyncConfig) -> Result<(), AppError> {
+        self.with_connection(|connection| {
+            let now = Utc::now().to_rfc3339();
+            connection
+                .execute(
+                    "INSERT INTO todo_sync_config (\
+                     id, endpoint, remote_directory, username, encryption_enabled, paused, \
+                     created_at, updated_at\
+                     ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?6)\
+                     ON CONFLICT(id) DO UPDATE SET endpoint = excluded.endpoint, \
+                     remote_directory = excluded.remote_directory, username = excluded.username, \
+                     encryption_enabled = excluded.encryption_enabled, paused = excluded.paused, \
+                     updated_at = excluded.updated_at",
+                    params![
+                        config.endpoint,
+                        config.remote_directory,
+                        config.username,
+                        i64::from(config.encryption_enabled),
+                        i64::from(config.paused),
+                        now,
+                    ],
+                )
+                .map_err(storage_error)?;
+
+            Ok(())
+        })
+    }
+
+    fn get_sync_state(&self) -> Result<SyncState, AppError> {
+        self.with_connection(|connection| {
+            connection
+                .query_row(
+                    "SELECT status, last_synced_at, last_error_code, pending_upload, \
+                     pending_download, conflicts, baseline_snapshot_id \
+                     FROM todo_sync_state WHERE id = 1",
+                    params![],
+                    sync_state_from_row,
+                )
+                .optional()
+                .map_err(storage_error)
+                .map(|state| state.unwrap_or_default())
+        })
+    }
+
+    fn save_sync_state(&self, state: &SyncState) -> Result<(), AppError> {
+        self.with_connection(|connection| {
+            connection
+                .execute(
+                    "INSERT INTO todo_sync_state (\
+                     id, status, last_synced_at, last_error_code, pending_upload, \
+                     pending_download, conflicts, baseline_snapshot_id\
+                     ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7)\
+                     ON CONFLICT(id) DO UPDATE SET status = excluded.status, \
+                     last_synced_at = excluded.last_synced_at, last_error_code = excluded.last_error_code, \
+                     pending_upload = excluded.pending_upload, pending_download = excluded.pending_download, \
+                     conflicts = excluded.conflicts, baseline_snapshot_id = excluded.baseline_snapshot_id",
+                    params![
+                        serde_json::to_string(&state.status).map_err(storage_error)?,
+                        state.last_synced_at.map(|value| value.to_rfc3339()),
+                        state.last_error_code,
+                        i64::from(state.counters.pending_upload),
+                        i64::from(state.counters.pending_download),
+                        i64::from(state.counters.conflicts),
+                        state.baseline_snapshot_id.map(|value| value.to_string()),
+                    ],
+                )
+                .map_err(storage_error)?;
+
+            Ok(())
+        })
+    }
+
+    fn save_sync_baseline(&self, snapshot: &SyncSnapshot) -> Result<(), AppError> {
+        self.with_connection(|connection| {
+            let payload = serde_json::to_string(snapshot).map_err(storage_error)?;
+            connection
+                .execute(
+                    "INSERT INTO todo_sync_baselines (snapshot_id, generated_at, payload_json) \
+                     VALUES (?1, ?2, ?3)\
+                     ON CONFLICT(snapshot_id) DO UPDATE SET generated_at = excluded.generated_at, \
+                     payload_json = excluded.payload_json",
+                    params![
+                        snapshot.snapshot_id.to_string(),
+                        snapshot.generated_at.to_rfc3339(),
+                        payload
+                    ],
+                )
+                .map_err(storage_error)?;
+
+            Ok(())
+        })
+    }
+
+    fn get_sync_baseline(&self) -> Result<Option<SyncSnapshot>, AppError> {
+        self.with_connection(|connection| {
+            connection
+                .query_row(
+                    "SELECT payload_json FROM todo_sync_baselines \
+                     WHERE snapshot_id = (SELECT baseline_snapshot_id FROM todo_sync_state WHERE id = 1)",
+                    params![],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()
+                .map_err(storage_error)
+                .and_then(|payload| {
+                    payload
+                        .map(|value| serde_json::from_str(&value).map_err(storage_error))
+                        .transpose()
+                })
+        })
+    }
+
+    fn save_sync_conflict(&self, conflict: &SyncFieldConflict) -> Result<(), AppError> {
+        self.with_connection(|connection| {
+            let entity_kind = serde_json::to_string(&conflict.entity_kind).map_err(storage_error)?;
+            let local_json = conflict
+                .local_value
+                .as_ref()
+                .map(serde_json::to_string)
+                .transpose()
+                .map_err(storage_error)?;
+            let remote_json = conflict
+                .remote_value
+                .as_ref()
+                .map(serde_json::to_string)
+                .transpose()
+                .map_err(storage_error)?;
+            let base_json = conflict
+                .base_value
+                .as_ref()
+                .map(serde_json::to_string)
+                .transpose()
+                .map_err(storage_error)?;
+            connection
+                .execute(
+                    "INSERT INTO todo_sync_conflicts (\
+                     entity_id, entity_kind, field_name, local_json, remote_json, base_json, created_at\
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)\
+                     ON CONFLICT(entity_id, entity_kind, field_name) DO UPDATE SET \
+                     local_json = excluded.local_json, remote_json = excluded.remote_json, \
+                     base_json = excluded.base_json, created_at = excluded.created_at, \
+                     resolved_at = NULL, decision = NULL",
+                    params![
+                        conflict.entity_id.to_string(),
+                        entity_kind,
+                        conflict.field_name,
+                        local_json,
+                        remote_json,
+                        base_json,
+                        Utc::now().to_rfc3339(),
+                    ],
+                )
+                .map_err(storage_error)?;
+
+            Ok(())
+        })
+    }
+
+    fn list_sync_conflicts(&self) -> Result<Vec<SyncFieldConflict>, AppError> {
+        self.with_connection(|connection| {
+            let mut statement = connection
+                .prepare(
+                    "SELECT entity_id, entity_kind, field_name, local_json, remote_json, base_json \
+                     FROM todo_sync_conflicts WHERE resolved_at IS NULL \
+                     ORDER BY created_at ASC, entity_id ASC, field_name ASC",
+                )
+                .map_err(storage_error)?;
+            let conflicts = statement
+                .query_map(params![], sync_conflict_from_row)
+                .map_err(storage_error)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(storage_error)?;
+
+            Ok(conflicts)
+        })
+    }
+
+    fn resolve_sync_conflict(
+        &self,
+        entity_id: Uuid,
+        entity_kind: SyncEntityKind,
+        field_name: &str,
+        decision: &str,
+    ) -> Result<(), AppError> {
+        self.with_connection(|connection| {
+            let transaction = connection.transaction().map_err(storage_error)?;
+            let entity_kind_json = serde_json::to_string(&entity_kind).map_err(storage_error)?;
+            let conflict = transaction
+                .query_row(
+                    "SELECT local_json, remote_json, base_json FROM todo_sync_conflicts \
+                     WHERE entity_id = ?1 AND entity_kind = ?2 AND field_name = ?3 \
+                     AND resolved_at IS NULL",
+                    params![entity_id.to_string(), entity_kind_json, field_name],
+                    |row| {
+                        Ok(SyncFieldConflict {
+                            entity_id,
+                            entity_kind,
+                            field_name: field_name.to_owned(),
+                            local_value: parse_optional_json(row.get(0)?)?,
+                            remote_value: parse_optional_json(row.get(1)?)?,
+                            base_value: parse_optional_json(row.get(2)?)?,
+                        })
+                    },
+                )
+                .optional()
+                .map_err(storage_error)?;
+
+            let Some(conflict) = conflict else {
+                transaction.commit().map_err(storage_error)?;
+                return Ok(());
+            };
+            let merge_decision = parse_merge_decision(decision)
+                .ok_or_else(|| storage_error("invalid sync conflict decision"))?;
+            let local_snapshot = read_local_sync_snapshot(&transaction)?;
+            let local_entity = local_snapshot
+                .entities
+                .iter()
+                .find(|entity| entity.id == entity_id && entity.kind == entity_kind)
+                .cloned();
+            let fallback_entity = conflict
+                .remote_value
+                .as_ref()
+                .and_then(|value| value.as_object())
+                .map(|fields| {
+                    SyncEntity::new(entity_id, entity_kind, fields.clone().into_iter().collect())
+                });
+            let Some(entity) = local_entity.or(fallback_entity) else {
+                transaction
+                    .execute(
+                        "UPDATE todo_sync_conflicts SET resolved_at = ?1, decision = ?2 \
+                         WHERE entity_id = ?3 AND entity_kind = ?4 AND field_name = ?5 \
+                         AND resolved_at IS NULL",
+                        params![
+                            Utc::now().to_rfc3339(),
+                            decision,
+                            entity_id.to_string(),
+                            entity_kind_json,
+                            field_name,
+                        ],
+                    )
+                    .map_err(storage_error)?;
+                transaction.commit().map_err(storage_error)?;
+                return Ok(());
+            };
+            let resolved_entities =
+                crate::domain::sync_merge::apply_decision(&entity, &conflict, merge_decision);
+            for resolved_entity in resolved_entities {
+                if resolved_entity.id == entity.id
+                    && merge_decision == crate::domain::sync_merge::MergeDecision::KeepLocal
+                {
+                    continue;
+                }
+                apply_sync_entity(&transaction, &resolved_entity)?;
+            }
+            transaction
+                .execute(
+                    "UPDATE todo_sync_conflicts SET resolved_at = ?1, decision = ?2 \
+                     WHERE entity_id = ?3 AND entity_kind = ?4 AND field_name = ?5 \
+                     AND resolved_at IS NULL",
+                    params![
+                        Utc::now().to_rfc3339(),
+                        decision,
+                        entity_id.to_string(),
+                        entity_kind_json,
+                        field_name,
+                    ],
+                )
+                .map_err(storage_error)?;
+            transaction.commit().map_err(storage_error)
         })
     }
 }
@@ -1168,6 +1506,43 @@ fn recurrence_to_database(recurrence: Option<&RecurrenceRule>) -> Result<Option<
         .map_err(storage_error)
 }
 
+fn read_local_sync_snapshot(connection: &Connection) -> Result<SyncSnapshot, AppError> {
+    let mut task_statement = connection
+        .prepare(
+            "SELECT id, title, note, project_id, parent_id, priority, scheduled_at, due_at, \
+             completed_at, recurrence_json, reminder_sent_at, recurrence_instance, \
+             monthly_anchor_day, created_at, updated_at, revision FROM todo_tasks \
+             ORDER BY id ASC",
+        )
+        .map_err(storage_error)?;
+    let tasks = task_statement
+        .query_map(params![], task_from_row)
+        .map_err(storage_error)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(storage_error)?;
+
+    let mut project_statement = connection
+        .prepare(
+            "SELECT id, name, archived_at, created_at, updated_at \
+             FROM todo_projects ORDER BY id ASC",
+        )
+        .map_err(storage_error)?;
+    let projects = project_statement
+        .query_map(params![], project_from_row)
+        .map_err(storage_error)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(storage_error)?;
+    let mut entities = Vec::with_capacity(tasks.len() + projects.len());
+    for task in tasks {
+        entities.push(SyncEntity::from_task(&task).map_err(storage_error)?);
+    }
+    for project in projects {
+        entities.push(SyncEntity::from_project(&project).map_err(storage_error)?);
+    }
+
+    Ok(SyncSnapshot::new(Uuid::new_v4(), entities))
+}
+
 fn parse_uuid(value: String) -> rusqlite::Result<Uuid> {
     Uuid::parse_str(&value).map_err(to_sql_error)
 }
@@ -1188,6 +1563,215 @@ fn parse_datetime(value: String) -> rusqlite::Result<DateTime<Utc>> {
     DateTime::parse_from_rfc3339(&value)
         .map(|date_time| date_time.with_timezone(&Utc))
         .map_err(to_sql_error)
+}
+
+fn apply_sync_entities(connection: &Connection, entities: &[SyncEntity]) -> Result<(), AppError> {
+    let mut ordered_entities = entities.to_vec();
+    ordered_entities.sort_by_key(|entity| {
+        let kind_order = match (entity.deleted, entity.kind) {
+            (true, SyncEntityKind::Task) => 0_u8,
+            (true, SyncEntityKind::Project) => 1,
+            (true, SyncEntityKind::Tag) => 2,
+            (false, SyncEntityKind::Project) => 3,
+            (false, SyncEntityKind::Tag) => 4,
+            (false, SyncEntityKind::Task) => 5,
+        };
+        (kind_order, entity.id)
+    });
+    for entity in &ordered_entities {
+        apply_sync_entity(connection, entity)?;
+    }
+    Ok(())
+}
+
+fn apply_sync_entity(connection: &Connection, entity: &SyncEntity) -> Result<(), AppError> {
+    if entity.deleted {
+        match entity.kind {
+            SyncEntityKind::Task => {
+                connection
+                    .execute(
+                        "UPDATE todo_tasks SET parent_id = NULL WHERE parent_id = ?1",
+                        params![entity.id.to_string()],
+                    )
+                    .map_err(storage_error)?;
+                connection
+                    .execute(
+                        "DELETE FROM todo_tasks WHERE id = ?1",
+                        params![entity.id.to_string()],
+                    )
+                    .map_err(storage_error)?;
+            }
+            SyncEntityKind::Project => {
+                connection
+                    .execute(
+                        "DELETE FROM todo_projects WHERE id = ?1",
+                        params![entity.id.to_string()],
+                    )
+                    .map_err(storage_error)?;
+            }
+            SyncEntityKind::Tag => {}
+        }
+        return Ok(());
+    }
+
+    match entity.kind {
+        SyncEntityKind::Task => {
+            let mut task = entity.to_task().map_err(storage_error)?;
+            if task.id != entity.id {
+                return Err(storage_error("sync task id does not match entity id"));
+            }
+            if let Some(current) = get_task(connection, entity.id)? {
+                task.revision = current
+                    .revision
+                    .checked_add(1)
+                    .ok_or_else(|| storage_error("sync task revision overflow"))?;
+                update_task(
+                    connection,
+                    &task,
+                    current.revision,
+                    ReminderClaimStateUpdate::ClearIfStoredScheduleDiffers,
+                )?;
+            } else {
+                task.revision = 1;
+                insert_task(connection, &task)?;
+            }
+        }
+        SyncEntityKind::Project => {
+            let project = entity.to_project().map_err(storage_error)?;
+            if project.id != entity.id {
+                return Err(storage_error("sync project id does not match entity id"));
+            }
+            let updated_rows = connection
+                .execute(
+                    "UPDATE todo_projects SET name = ?1, archived_at = ?2, created_at = ?3, \
+                     updated_at = ?4 WHERE id = ?5",
+                    params![
+                        project.name,
+                        project.archived_at.map(|value| value.to_rfc3339()),
+                        project.created_at.to_rfc3339(),
+                        project.updated_at.to_rfc3339(),
+                        project.id.to_string(),
+                    ],
+                )
+                .map_err(storage_error)?;
+            if updated_rows == 0 {
+                connection
+                    .execute(
+                        "INSERT INTO todo_projects (id, name, archived_at, created_at, updated_at) \
+                         VALUES (?1, ?2, ?3, ?4, ?5)",
+                        params![
+                            project.id.to_string(),
+                            project.name,
+                            project.archived_at.map(|value| value.to_rfc3339()),
+                            project.created_at.to_rfc3339(),
+                            project.updated_at.to_rfc3339(),
+                        ],
+                    )
+                    .map_err(storage_error)?;
+            }
+        }
+        SyncEntityKind::Tag => {}
+    }
+
+    Ok(())
+}
+
+fn sync_state_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SyncState> {
+    let status_json = row.get::<_, String>(0)?;
+    let last_synced_at = row
+        .get::<_, Option<String>>(1)?
+        .map(parse_datetime)
+        .transpose()?;
+    let baseline_snapshot_id = row
+        .get::<_, Option<String>>(6)?
+        .map(|value| {
+            Uuid::parse_str(&value).map_err(|error| {
+                to_sql_error(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("invalid sync baseline snapshot id: {error}"),
+                ))
+            })
+        })
+        .transpose()?;
+
+    Ok(SyncState {
+        status: serde_json::from_str(&status_json).map_err(|error| {
+            to_sql_error(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("invalid sync status: {error}"),
+            ))
+        })?,
+        last_synced_at,
+        last_error_code: row.get(2)?,
+        counters: crate::domain::sync::SyncCounters {
+            pending_upload: row.get::<_, i64>(3)?.try_into().map_err(|error| {
+                to_sql_error(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("invalid pending upload count: {error}"),
+                ))
+            })?,
+            pending_download: row.get::<_, i64>(4)?.try_into().map_err(|error| {
+                to_sql_error(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("invalid pending download count: {error}"),
+                ))
+            })?,
+            conflicts: row.get::<_, i64>(5)?.try_into().map_err(|error| {
+                to_sql_error(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("invalid conflict count: {error}"),
+                ))
+            })?,
+        },
+        baseline_snapshot_id,
+    })
+}
+
+fn sync_conflict_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SyncFieldConflict> {
+    let entity_id = row.get::<_, String>(0)?.parse::<Uuid>().map_err(|error| {
+        to_sql_error(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("invalid sync conflict entity id: {error}"),
+        ))
+    })?;
+    let entity_kind_json = row.get::<_, String>(1)?;
+    let entity_kind: SyncEntityKind = serde_json::from_str(&entity_kind_json).map_err(|error| {
+        to_sql_error(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("invalid sync conflict entity kind: {error}"),
+        ))
+    })?;
+
+    Ok(SyncFieldConflict {
+        entity_id,
+        entity_kind,
+        field_name: row.get(2)?,
+        local_value: parse_optional_json(row.get(3)?)?,
+        remote_value: parse_optional_json(row.get(4)?)?,
+        base_value: parse_optional_json(row.get(5)?)?,
+    })
+}
+
+fn parse_optional_json(value: Option<String>) -> rusqlite::Result<Option<serde_json::Value>> {
+    value
+        .map(|value| {
+            serde_json::from_str(&value).map_err(|error| {
+                to_sql_error(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("invalid sync JSON value: {error}"),
+                ))
+            })
+        })
+        .transpose()
+}
+
+fn parse_merge_decision(value: &str) -> Option<crate::domain::sync_merge::MergeDecision> {
+    match value {
+        "keepLocal" => Some(crate::domain::sync_merge::MergeDecision::KeepLocal),
+        "acceptRemote" => Some(crate::domain::sync_merge::MergeDecision::AcceptRemote),
+        "createConflictCopy" => Some(crate::domain::sync_merge::MergeDecision::CreateConflictCopy),
+        _ => None,
+    }
 }
 
 fn to_sql_error(error: impl std::error::Error + Send + Sync + 'static) -> rusqlite::Error {

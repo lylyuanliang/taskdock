@@ -16,6 +16,7 @@ import type { AppView } from "../tasks/taskTypes";
 interface AppNavigationProps {
   activeView: AppView;
   onCreateTask: () => void;
+  onOpenSettings?: () => void;
   onViewChange: (view: AppView) => void;
 }
 
@@ -34,7 +35,12 @@ const navigationItems: readonly NavigationItem[] = [
   { icon: CheckCircle2, labelKey: "navigation.completed", view: "completed" },
 ];
 
-function AppNavigation({ activeView, onCreateTask, onViewChange }: AppNavigationProps) {
+function AppNavigation({
+  activeView,
+  onCreateTask,
+  onOpenSettings = () => undefined,
+  onViewChange,
+}: AppNavigationProps) {
   return (
     <nav
       aria-label={t("navigation.primary")}
@@ -82,9 +88,8 @@ function AppNavigation({ activeView, onCreateTask, onViewChange }: AppNavigation
       </div>
       <div className="navigation-rail__footer">
         <button
-          aria-disabled="true"
           className="navigation-rail__item navigation-rail__item--planned"
-          disabled
+          onClick={onOpenSettings}
           title={t("navigation.planned")}
           type="button"
         >

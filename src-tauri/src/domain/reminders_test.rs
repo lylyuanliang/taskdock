@@ -1171,15 +1171,15 @@ impl TaskRepository for &ReleaseRetryRepository {
                 .claims
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
-            if claims.contains_key(&task_id) {
-                false
-            } else {
-                claims.insert(task_id, claim_token);
+            if let std::collections::hash_map::Entry::Vacant(entry) = claims.entry(task_id) {
+                entry.insert(claim_token);
                 self.claim_tokens
                     .lock()
                     .unwrap_or_else(|poisoned| poisoned.into_inner())
                     .push(claim_token);
                 true
+            } else {
+                false
             }
         };
         let synchronization = self

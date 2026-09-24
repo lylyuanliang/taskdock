@@ -29,6 +29,14 @@ rusqlite = { version = "0.37", features = ["bundled"] }
 tokio = { version = "1", default-features = false, features = ["sync", "time", "macros"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 tauri-plugin-single-instance = "2"
+aes-gcm = "0.10.3"
+argon2 = "0.5.3"
+base64 = "0.22.1"
+keyring = { version = "3.6.3", default-features = false, features = ["windows-native"] }
+rand = "0.9.2"
+reqwest = { version = "0.13.4", default-features = false, features = ["rustls", "json"] }
+zeroize = "1.8.1"
+url = "2.5.8"
 
 [dev-dependencies]
 tokio = { version = "1", default-features = false, features = ["macros", "rt-multi-thread"] }

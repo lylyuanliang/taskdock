@@ -11,6 +11,7 @@ use uuid::Uuid;
 use crate::{
     domain::{ports::ProjectRepository, project::Project, project_service::ProjectService},
     error::AppError,
+    sync_worker::SyncWorker,
     AppState,
 };
 
@@ -66,7 +67,9 @@ pub(crate) fn create_project(
     request: Request<'_>,
     state: State<'_, AppState>,
 ) -> Result<ProjectDto, CommandError> {
-    create_project_with_body(state.projects.as_ref(), request.body())
+    let result = create_project_with_body(state.projects.as_ref(), request.body());
+    request_sync_after_mutation(&state.sync_worker, result.is_ok());
+    result
 }
 
 #[tauri::command]
@@ -74,7 +77,9 @@ pub(crate) fn rename_project(
     request: Request<'_>,
     state: State<'_, AppState>,
 ) -> Result<ProjectDto, CommandError> {
-    rename_project_with_body(state.projects.as_ref(), request.body())
+    let result = rename_project_with_body(state.projects.as_ref(), request.body());
+    request_sync_after_mutation(&state.sync_worker, result.is_ok());
+    result
 }
 
 #[tauri::command]
@@ -82,7 +87,17 @@ pub(crate) fn archive_project(
     request: Request<'_>,
     state: State<'_, AppState>,
 ) -> Result<ProjectDto, CommandError> {
-    archive_project_with_body(state.projects.as_ref(), request.body())
+    let result = archive_project_with_body(state.projects.as_ref(), request.body());
+    request_sync_after_mutation(&state.sync_worker, result.is_ok());
+    result
+}
+
+fn request_sync_after_mutation(worker: &SyncWorker, succeeded: bool) {
+    if succeeded {
+        if let Err(error) = worker.request_sync() {
+            eprintln!("sync background request failed: {error}");
+        }
+    }
 }
 
 pub(crate) fn list_projects_with_body<R>(

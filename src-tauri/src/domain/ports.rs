@@ -5,6 +5,8 @@ use crate::{
     domain::{
         project::Project,
         recurrence::TaskCompletion,
+        sync::{SyncConfig, SyncEntityKind, SyncSnapshot, SyncState},
+        sync_merge::SyncFieldConflict,
         task::{ReminderClaimStateUpdate, Task},
         task_query::{TaskSummaryDto, TaskView},
     },
@@ -106,6 +108,27 @@ pub trait AiProvider: Send + Sync {
 #[expect(dead_code, reason = "M2 WebDAV 同步流程接入前预留同步后端端口")]
 pub trait SyncBackend: Send + Sync {
     fn backend_kind(&self) -> SyncBackendKind;
+}
+
+pub trait SyncRepository: Send + Sync {
+    fn get_local_sync_snapshot(&self) -> Result<SyncSnapshot, AppError>;
+    fn apply_sync_snapshot(&self, snapshot: &SyncSnapshot) -> Result<(), AppError>;
+    fn replace_sync_snapshot(&self, snapshot: &SyncSnapshot) -> Result<(), AppError>;
+    fn get_sync_config(&self) -> Result<Option<SyncConfig>, AppError>;
+    fn save_sync_config(&self, config: &SyncConfig) -> Result<(), AppError>;
+    fn get_sync_state(&self) -> Result<SyncState, AppError>;
+    fn save_sync_state(&self, state: &SyncState) -> Result<(), AppError>;
+    fn save_sync_baseline(&self, snapshot: &SyncSnapshot) -> Result<(), AppError>;
+    fn get_sync_baseline(&self) -> Result<Option<SyncSnapshot>, AppError>;
+    fn save_sync_conflict(&self, conflict: &SyncFieldConflict) -> Result<(), AppError>;
+    fn list_sync_conflicts(&self) -> Result<Vec<SyncFieldConflict>, AppError>;
+    fn resolve_sync_conflict(
+        &self,
+        entity_id: Uuid,
+        entity_kind: SyncEntityKind,
+        field_name: &str,
+        decision: &str,
+    ) -> Result<(), AppError>;
 }
 
 #[expect(dead_code, reason = "M2 WebDAV 同步流程接入前预留后端类型")]

@@ -53,6 +53,24 @@ it("renders the approved primary navigation order", () => {
 
   expect(labels).toEqual(["Today", "Inbox", "Upcoming", "Calendar", "Projects", "Completed"]);
 
-  expect(screen.getByRole("button", { name: "Settings" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Settings" })).toBeEnabled();
   expect(screen.getByRole("button", { name: "Support" })).toBeDisabled();
+});
+
+it("opens settings from the primary navigation", async () => {
+  const user = userEvent.setup();
+  const onOpenSettings = vi.fn();
+
+  render(
+    <AppNavigation
+      activeView="inbox"
+      onCreateTask={vi.fn()}
+      onOpenSettings={onOpenSettings}
+      onViewChange={vi.fn()}
+    />,
+  );
+
+  await user.click(screen.getByRole("button", { name: "Settings" }));
+
+  expect(onOpenSettings).toHaveBeenCalledOnce();
 });

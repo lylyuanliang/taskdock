@@ -12,7 +12,8 @@
     "test:e2e": "python tests/e2e/daily_flow.py",
     "test:watch": "vitest",
     "lint": "eslint . --max-warnings 0",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "test:e2e:sync": "python tests/e2e/sync_flow.py"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

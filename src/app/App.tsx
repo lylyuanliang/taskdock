@@ -13,6 +13,7 @@ import AppNavigation from "../features/navigation/AppNavigation";
 import ProjectList from "../features/projects/ProjectList";
 import ProjectTaskBoard from "../features/projects/ProjectTaskBoard";
 import SearchDialog from "../features/search/SearchDialog";
+import SettingsWorkspace from "../features/settings/SettingsWorkspace";
 import { initialSearchQueryState, searchQueryReducer } from "../features/search/searchQueryState";
 import type { ProjectDto } from "../features/projects/projectTypes";
 import TaskEditor from "../features/tasks/TaskEditor";
@@ -145,6 +146,7 @@ function App() {
     useState<ProjectTaskLoadRequest | null>(null);
   const [calendarMonth, setCalendarMonth] = useState(currentLocalMonth);
   const [activeView, setActiveView] = useState<AppView>("inbox");
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [calendarQueryState, dispatchCalendarQuery] = useReducer(
     calendarQueryReducer,
     initialCalendarQueryState,
@@ -711,11 +713,20 @@ function App() {
         ? "error"
         : "ready";
 
+  if (isSettingsOpen) {
+    return (
+      <div className="settings-shell" data-testid="settings-shell">
+        <SettingsWorkspace onBack={() => setIsSettingsOpen(false)} />
+      </div>
+    );
+  }
+
   return (
     <div className="app-shell" data-testid="app-shell">
       <AppNavigation
         activeView={activeView}
         onCreateTask={handleNavigationNewTask}
+        onOpenSettings={() => setIsSettingsOpen(true)}
         onViewChange={handleViewChange}
       />
       <div className="app-workspace">
