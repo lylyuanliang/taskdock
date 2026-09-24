@@ -205,6 +205,7 @@
   display: grid;
   min-width: 0;
   padding: 20px;
+  align-content: start;
   gap: 16px;
   background: var(--color-surface-low);
   border: 1px solid var(--color-border);
@@ -235,9 +236,15 @@
   display: grid;
   gap: 7px;
 }
-.sync-card input {
+.sync-card input,
+.sync-card select {
   min-height: 36px;
   padding: 8px 10px;
+}
+.sync-form-hint {
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  line-height: 1.45;
 }
 .sync-form-row {
   display: grid;

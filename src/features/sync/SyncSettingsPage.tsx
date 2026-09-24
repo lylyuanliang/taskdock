@@ -3,7 +3,9 @@ import { useEffect, useState } from "react";
 import type {
   SaveSyncConfigInput,
   SyncConfigDto,
+  SyncFrequency,
   SyncStateDto,
+  SyncStrategy,
   TestSyncConnectionInput,
 } from "../../api/sync";
 import { getCommandErrorMessageKey } from "../tasks/taskTypes";
@@ -30,7 +32,18 @@ const emptyForm: SaveSyncConfigInput = {
   encryptionPassphrase: "",
   encryptionEnabled: true,
   paused: false,
+  strategy: "smartMerge",
+  frequency: "fiveMinutes",
 };
+
+const syncFrequencyOptions: Array<{ value: SyncFrequency; label: TranslationKey }> = [
+  { value: "oneMinute", label: "settings.sync.oneMinute" },
+  { value: "fiveMinutes", label: "settings.sync.fiveMinutes" },
+  { value: "fifteenMinutes", label: "settings.sync.fifteenMinutes" },
+  { value: "thirtyMinutes", label: "settings.sync.thirtyMinutes" },
+  { value: "oneHour", label: "settings.sync.oneHour" },
+  { value: "manual", label: "settings.sync.manual" },
+];
 
 function statusLabel(status: SyncStateDto["status"]): string {
   const labels: Record<SyncStateDto["status"], TranslationKey> = {
@@ -71,6 +84,8 @@ export default function SyncSettingsPage({
           paused: config.paused,
           remoteDirectory: config.remoteDirectory,
           username: config.username,
+          strategy: config.strategy,
+          frequency: config.frequency,
         }));
       }, 0);
 
@@ -211,6 +226,34 @@ export default function SyncSettingsPage({
             <RefreshCw aria-hidden="true" size={15} />
             <span>{t("settings.sync.testConnection")}</span>
           </button>
+          <label>
+            <span>{t("settings.sync.strategy")}</span>
+            <small className="sync-form-hint">{t("settings.sync.strategyHint")}</small>
+            <select
+              aria-label={t("settings.sync.strategy")}
+              onChange={(event) => setField("strategy", event.target.value as SyncStrategy)}
+              value={form.strategy}
+            >
+              <option value="smartMerge">{t("settings.sync.smartMerge")}</option>
+              <option value="keepLocal">{t("settings.sync.keepLocal")}</option>
+              <option value="keepRemote">{t("settings.sync.keepRemote")}</option>
+            </select>
+          </label>
+          <label>
+            <span>{t("settings.sync.frequency")}</span>
+            <small className="sync-form-hint">{t("settings.sync.frequencyHint")}</small>
+            <select
+              aria-label={t("settings.sync.frequency")}
+              onChange={(event) => setField("frequency", event.target.value as SyncFrequency)}
+              value={form.frequency}
+            >
+              {syncFrequencyOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {t(option.label)}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
 
         <div className="sync-card">

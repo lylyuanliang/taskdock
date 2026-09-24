@@ -68,6 +68,8 @@ SYNC_MOCK = r"""
         username: input.username,
         encryptionEnabled: input.encryptionEnabled,
         paused: input.paused,
+        strategy: input.strategy,
+        frequency: input.frequency,
       };
       paused = input.paused;
       return config;
@@ -176,6 +178,8 @@ def run_sync_flow(page: Page) -> None:
     save_calls = [call for call in calls(page) if call["command"] == "save_sync_config"]
     assert len(save_calls) == 1
     assert save_calls[0]["args"]["input"]["webdavPassword"] == "e2e-password"
+    assert save_calls[0]["args"]["input"]["strategy"] == "smartMerge"
+    assert save_calls[0]["args"]["input"]["frequency"] == "fiveMinutes"
 
     page.locator(".sync-page__actions").get_by_role("button", name="Initial sync").click()
     expect(page.get_by_role("heading", name="Prepare initial sync", level=2)).to_be_visible()

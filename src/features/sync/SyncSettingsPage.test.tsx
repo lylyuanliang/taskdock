@@ -19,7 +19,7 @@ const state: SyncStateDto = {
 function renderPage(onTestConnection: (input: TestSyncConnectionInput) => Promise<void>) {
   const onSave = vi.fn().mockResolvedValue(undefined);
 
-  return render(
+  const rendered = render(
     <SyncSettingsPage
       config={null}
       isSaving={false}
@@ -33,6 +33,8 @@ function renderPage(onTestConnection: (input: TestSyncConnectionInput) => Promis
       state={state}
     />,
   );
+
+  return { onSave, ...rendered };
 }
 
 it("tests the current form draft without saving it first", async () => {
@@ -77,4 +79,32 @@ it("shows a precise authentication error returned by the backend", async () => {
     "The account or third-party app password is incorrect.",
   );
   expect(screen.queryByText("third-party-password")).not.toBeInTheDocument();
+});
+
+it("persists the selected automatic sync strategy with the settings", async () => {
+  const user = userEvent.setup();
+  const { onSave } = renderPage(vi.fn().mockResolvedValue(undefined));
+
+  await user.selectOptions(screen.getByLabelText("Automatic sync strategy"), "keepRemote");
+  await user.click(screen.getByRole("button", { name: "Save settings" }));
+
+  expect(onSave).toHaveBeenCalledWith(
+    expect.objectContaining({
+      strategy: "keepRemote",
+    }),
+  );
+});
+
+it("persists the selected automatic sync frequency with the settings", async () => {
+  const user = userEvent.setup();
+  const { onSave } = renderPage(vi.fn().mockResolvedValue(undefined));
+
+  await user.selectOptions(screen.getByLabelText("Automatic sync frequency"), "oneHour");
+  await user.click(screen.getByRole("button", { name: "Save settings" }));
+
+  expect(onSave).toHaveBeenCalledWith(
+    expect.objectContaining({
+      frequency: "oneHour",
+    }),
+  );
 });
