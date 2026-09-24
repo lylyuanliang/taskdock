@@ -59,7 +59,7 @@ use quick_panel::{
 };
 use reminder_notification::TauriReminderNotifier;
 use reminder_worker::{ReminderWorker, REMINDER_POLL_INTERVAL};
-use sync_worker::{SyncWorker, SYNC_POLL_INTERVAL};
+use sync_worker::SyncWorker;
 use task_mutation_notification::TauriTaskMutationNotifier;
 
 pub(crate) struct AppState {
@@ -86,7 +86,7 @@ impl AppState {
             sync_transport,
             Arc::clone(&sync_credentials),
         ));
-        let sync_worker = SyncWorker::start(Arc::clone(&sync_service), SYNC_POLL_INTERVAL);
+        let sync_worker = SyncWorker::start(Arc::clone(&sync_service));
         let reminder_scheduler = Arc::new(ReminderScheduler::new(
             TaskService::new(repository.clone()),
             TauriReminderNotifier::new(app.clone()),

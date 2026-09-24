@@ -288,7 +288,7 @@ fn error_for_status(status: StatusCode) -> AppError {
 #[cfg(test)]
 mod tests {
     use super::{configuration_error, error_for_status, WebDavClient};
-    use crate::domain::sync::SyncConfig;
+    use crate::domain::sync::{SyncConfig, SyncFrequency, SyncStrategy};
     use reqwest::StatusCode;
 
     fn config(endpoint: &str, directory: &str) -> SyncConfig {
@@ -298,6 +298,8 @@ mod tests {
             username: "user".to_owned(),
             encryption_enabled: true,
             paused: false,
+            strategy: SyncStrategy::SmartMerge,
+            frequency: SyncFrequency::FiveMinutes,
         }
     }
 

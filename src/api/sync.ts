@@ -11,12 +11,17 @@ export type SyncStatus =
 
 export type SyncStrategy = "smartMerge" | "keepLocal" | "keepRemote";
 
+export type SyncFrequency =
+  "oneMinute" | "fiveMinutes" | "fifteenMinutes" | "thirtyMinutes" | "oneHour" | "manual";
+
 export interface SyncConfigDto {
   endpoint: string;
   remoteDirectory: string;
   username: string;
   encryptionEnabled: boolean;
   paused: boolean;
+  strategy: SyncStrategy;
+  frequency: SyncFrequency;
 }
 
 export interface SaveSyncConfigInput {
@@ -27,6 +32,8 @@ export interface SaveSyncConfigInput {
   encryptionPassphrase: string;
   encryptionEnabled: boolean;
   paused: boolean;
+  strategy: SyncStrategy;
+  frequency: SyncFrequency;
 }
 
 export interface TestSyncConnectionInput {

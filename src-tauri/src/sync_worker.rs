@@ -6,10 +6,7 @@ use std::{
 };
 
 use tauri::async_runtime::JoinHandle;
-use tokio::{
-    sync::mpsc::{self, error::TrySendError},
-    time::MissedTickBehavior,
-};
+use tokio::sync::mpsc::{self, error::TrySendError};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -21,11 +18,11 @@ use crate::{
     infrastructure::{sync_crypto::CredentialStore, webdav::WebDavTransport},
 };
 
-pub(crate) const SYNC_POLL_INTERVAL: Duration = Duration::from_secs(300);
 pub(crate) type SyncFuture<'a> =
     Pin<Box<dyn Future<Output = Result<SyncRunSummary, AppError>> + Send + 'a>>;
 
 pub(crate) trait SyncScan: Send + Sync + 'static {
+    fn automatic_interval(&self) -> Option<Duration>;
     fn scan<'a>(&'a self) -> SyncFuture<'a>;
 }
 
@@ -35,6 +32,10 @@ where
     T: WebDavTransport + 'static,
     C: CredentialStore + 'static,
 {
+    fn automatic_interval(&self) -> Option<Duration> {
+        self.automatic_sync_interval()
+    }
+
     fn scan<'a>(&'a self) -> SyncFuture<'a> {
         Box::pin(self.sync_now())
     }
@@ -47,19 +48,15 @@ pub(crate) struct SyncWorker {
 }
 
 impl SyncWorker {
-    pub(crate) fn start<S>(scanner: Arc<S>, poll_interval: Duration) -> Self
+    pub(crate) fn start<S>(scanner: Arc<S>) -> Self
     where
         S: SyncScan,
     {
         let (sync_sender, sync_receiver) = mpsc::channel(1);
         let cancellation = CancellationToken::new();
         let worker_cancellation = cancellation.clone();
-        let join_handle = tauri::async_runtime::spawn(run_worker(
-            scanner,
-            poll_interval,
-            sync_receiver,
-            worker_cancellation,
-        ));
+        let join_handle =
+            tauri::async_runtime::spawn(run_worker(scanner, sync_receiver, worker_cancellation));
 
         Self {
             sync_sender,
@@ -111,32 +108,56 @@ impl Drop for SyncWorker {
 
 async fn run_worker<S>(
     scanner: Arc<S>,
-    poll_interval: Duration,
     mut sync_receiver: mpsc::Receiver<()>,
     cancellation: CancellationToken,
 ) where
     S: SyncScan,
 {
-    let mut poll_timer = tokio::time::interval(poll_interval);
-    poll_timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
-    poll_timer.tick().await;
-
+    let mut first_scan = true;
     loop {
         if cancellation.is_cancelled() {
             break;
         }
 
-        run_scan(scanner.as_ref()).await;
+        let interval = scanner.automatic_interval();
+        if first_scan {
+            first_scan = false;
+            if interval.is_some() {
+                run_scan(scanner.as_ref()).await;
+                continue;
+            }
+        }
 
-        tokio::select! {
-            biased;
-            _ = cancellation.cancelled() => break,
-            wake = sync_receiver.recv() => {
-                if wake.is_none() {
-                    break;
+        let should_scan = match interval {
+            Some(interval) => {
+                tokio::select! {
+                    biased;
+                    _ = cancellation.cancelled() => break,
+                    wake = sync_receiver.recv() => {
+                        if wake.is_none() {
+                            break;
+                        }
+                        true
+                    }
+                    _ = tokio::time::sleep(interval) => true,
                 }
             }
-            _ = poll_timer.tick() => {}
+            None => {
+                tokio::select! {
+                    biased;
+                    _ = cancellation.cancelled() => break,
+                    wake = sync_receiver.recv() => {
+                        if wake.is_none() {
+                            break;
+                        }
+                        true
+                    }
+                }
+            }
+        };
+
+        if should_scan {
+            run_scan(scanner.as_ref()).await;
         }
     }
 }
@@ -171,12 +192,26 @@ mod tests {
     use super::{SyncScan, SyncWorker};
     use crate::domain::sync_service::SyncRunSummary;
 
-    #[derive(Clone, Default)]
+    #[derive(Clone)]
     struct FakeScan {
         runs: Arc<AtomicUsize>,
+        automatic_interval: Option<Duration>,
+    }
+
+    impl Default for FakeScan {
+        fn default() -> Self {
+            Self {
+                runs: Arc::new(AtomicUsize::new(0)),
+                automatic_interval: Some(Duration::from_secs(60)),
+            }
+        }
     }
 
     impl SyncScan for FakeScan {
+        fn automatic_interval(&self) -> Option<Duration> {
+            self.automatic_interval
+        }
+
         fn scan<'a>(&'a self) -> super::SyncFuture<'a> {
             let runs = Arc::clone(&self.runs);
             Box::pin(async move {
@@ -189,7 +224,7 @@ mod tests {
     #[tokio::test]
     async fn worker_scans_on_start_and_coalesces_wake_requests() {
         let scanner = Arc::new(FakeScan::default());
-        let worker = SyncWorker::start(Arc::clone(&scanner), Duration::from_secs(60));
+        let worker = SyncWorker::start(Arc::clone(&scanner));
 
         timeout(Duration::from_secs(1), async {
             loop {
@@ -215,6 +250,31 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(scanner.runs.load(Ordering::SeqCst), 2);
+        worker.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn manual_frequency_waits_for_an_explicit_wake_request() {
+        let scanner = Arc::new(FakeScan {
+            runs: Arc::new(AtomicUsize::new(0)),
+            automatic_interval: None,
+        });
+        let worker = SyncWorker::start(Arc::clone(&scanner));
+
+        sleep(Duration::from_millis(50)).await;
+        assert_eq!(scanner.runs.load(Ordering::SeqCst), 0);
+
+        worker.request_sync().unwrap();
+        timeout(Duration::from_secs(1), async {
+            loop {
+                if scanner.runs.load(Ordering::SeqCst) >= 1 {
+                    break;
+                }
+                sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
         worker.shutdown().await;
     }
 }

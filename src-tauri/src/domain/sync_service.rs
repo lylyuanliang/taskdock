@@ -1,11 +1,11 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::{
     ports::SyncRepository,
-    sync::{SyncSnapshot, SyncState, SyncStatus, SyncStrategy},
+    sync::{SyncEntity, SyncSnapshot, SyncState, SyncStatus, SyncStrategy},
     sync_merge::{merge_snapshots, MergePlan, MergeSummary},
 };
 use crate::{
@@ -66,7 +66,19 @@ where
     }
 
     pub async fn sync_now(&self) -> Result<SyncRunSummary, AppError> {
-        self.sync_now_with_strategy(SyncStrategy::SmartMerge).await
+        let strategy = self
+            .repository
+            .get_sync_config()?
+            .map(|config| config.strategy)
+            .unwrap_or(SyncStrategy::SmartMerge);
+        self.sync_now_with_strategy(strategy).await
+    }
+
+    pub fn automatic_sync_interval(&self) -> Option<Duration> {
+        match self.repository.get_sync_config() {
+            Ok(Some(config)) => config.frequency.automatic_interval(),
+            Ok(None) | Err(_) => None,
+        }
     }
 
     pub async fn sync_now_with_strategy(
@@ -128,6 +140,16 @@ where
         };
 
         let remote = decode_snapshot(&remote_payload, &config, &encryption_passphrase)?;
+        if sync_entities_equal(&local.entities, &baseline.entities)
+            && sync_entities_equal(&remote.entities, &baseline.entities)
+        {
+            self.repository.save_sync_baseline(&remote)?;
+            self.repository.save_sync_state(&synced_state(&remote))?;
+            return Ok(SyncRunSummary {
+                status: SyncStatus::Synced,
+                ..SyncRunSummary::default()
+            });
+        }
         let plan = match strategy {
             SyncStrategy::SmartMerge => {
                 merge_snapshots(&baseline.entities, &local.entities, &remote.entities)
@@ -157,20 +179,23 @@ where
             self.repository.apply_sync_snapshot(&merged_snapshot)?;
         }
         let final_local = self.repository.get_local_sync_snapshot()?;
-        let payload = encode_snapshot(&final_local, &config, &encryption_passphrase)?;
-        if let Err(error) = self
-            .transport
-            .store_snapshot(&config, &password, &payload)
-            .await
-        {
-            self.record_sync_failure(&error)?;
-            return Err(error);
+        let uploaded = !sync_entities_equal(&final_local.entities, &remote.entities);
+        if uploaded {
+            let payload = encode_snapshot(&final_local, &config, &encryption_passphrase)?;
+            if let Err(error) = self
+                .transport
+                .store_snapshot(&config, &password, &payload)
+                .await
+            {
+                self.record_sync_failure(&error)?;
+                return Err(error);
+            }
         }
         self.repository.save_sync_baseline(&final_local)?;
         self.repository
             .save_sync_state(&synced_state(&final_local))?;
 
-        Ok(summary_from_plan(&plan, SyncStatus::Synced, true))
+        Ok(summary_from_plan(&plan, SyncStatus::Synced, uploaded))
     }
 
     pub(crate) async fn test_connection_with_config(
@@ -242,6 +267,25 @@ fn summary_from_plan(plan: &MergePlan, status: SyncStatus, uploaded: bool) -> Sy
     }
 }
 
+fn sync_entities_equal(left: &[SyncEntity], right: &[SyncEntity]) -> bool {
+    let mut left = left.iter().map(comparable_entity).collect::<Vec<_>>();
+    let mut right = right.iter().map(comparable_entity).collect::<Vec<_>>();
+    left.sort_by_key(|entity| (entity.kind, entity.id));
+    right.sort_by_key(|entity| (entity.kind, entity.id));
+    left == right
+}
+
+fn comparable_entity(entity: &SyncEntity) -> SyncEntity {
+    let mut comparable = entity.clone();
+    comparable.fields.retain(|field_name, _| {
+        !matches!(
+            field_name.as_str(),
+            "id" | "created_at" | "updated_at" | "revision" | "reminder_sent_at"
+        )
+    });
+    comparable
+}
+
 fn synced_state(snapshot: &SyncSnapshot) -> SyncState {
     SyncState {
         status: SyncStatus::Synced,
@@ -283,7 +327,7 @@ mod tests {
     use crate::{
         domain::{
             ports::{SyncRepository, TaskRepository},
-            sync::{SyncConfig, SyncEntity, SyncSnapshot, SyncStrategy},
+            sync::{SyncConfig, SyncEntity, SyncFrequency, SyncSnapshot, SyncStrategy},
             task::Task,
         },
         infrastructure::{
@@ -389,6 +433,8 @@ mod tests {
             username: "user@example.com".to_owned(),
             encryption_enabled: true,
             paused: false,
+            strategy: SyncStrategy::SmartMerge,
+            frequency: SyncFrequency::FiveMinutes,
         };
 
         service
@@ -406,6 +452,8 @@ mod tests {
             username: "alice".to_owned(),
             encryption_enabled: true,
             paused: false,
+            strategy: SyncStrategy::SmartMerge,
+            frequency: SyncFrequency::FiveMinutes,
         };
         repository.save_sync_config(&config).unwrap();
         let task = Task::for_test("First sync".to_owned());
@@ -433,6 +481,97 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn unchanged_sync_does_not_rewrite_the_remote_snapshot() {
+        let repository = Arc::new(SqliteTaskRepository::in_memory().unwrap());
+        let config = SyncConfig {
+            endpoint: "https://dav.example.test".to_owned(),
+            remote_directory: "todo".to_owned(),
+            username: "alice".to_owned(),
+            encryption_enabled: false,
+            paused: false,
+            strategy: SyncStrategy::SmartMerge,
+            frequency: SyncFrequency::FiveMinutes,
+        };
+        repository.save_sync_config(&config).unwrap();
+        repository
+            .insert(&Task::for_test("Unchanged task".to_owned()))
+            .unwrap();
+        let credentials = Arc::new(FakeCredentials::default());
+        credentials
+            .save_secret("webdav:alice", "dav-password")
+            .unwrap();
+        let transport = Arc::new(FakeTransport::default());
+        let service = SyncService::new(
+            Arc::clone(&repository),
+            Arc::clone(&transport),
+            Arc::clone(&credentials),
+        );
+
+        service.sync_now().await.unwrap();
+        let first_payload = transport.payload.lock().unwrap().clone();
+        service.sync_now().await.unwrap();
+        let second_payload = transport.payload.lock().unwrap().clone();
+
+        assert_eq!(first_payload, second_payload);
+    }
+
+    #[tokio::test]
+    async fn remote_only_change_is_pulled_without_uploading() {
+        let repository = Arc::new(SqliteTaskRepository::in_memory().unwrap());
+        let config = SyncConfig {
+            endpoint: "https://dav.example.test".to_owned(),
+            remote_directory: "todo".to_owned(),
+            username: "alice".to_owned(),
+            encryption_enabled: false,
+            paused: false,
+            strategy: SyncStrategy::SmartMerge,
+            frequency: SyncFrequency::FiveMinutes,
+        };
+        repository.save_sync_config(&config).unwrap();
+        let shared_task = Task::for_test("Shared task".to_owned());
+        repository.insert(&shared_task).unwrap();
+        let credentials = Arc::new(FakeCredentials::default());
+        credentials
+            .save_secret("webdav:alice", "dav-password")
+            .unwrap();
+        let transport = Arc::new(FakeTransport::default());
+        let service = SyncService::new(
+            Arc::clone(&repository),
+            Arc::clone(&transport),
+            Arc::clone(&credentials),
+        );
+
+        service.sync_now().await.unwrap();
+        let remote_task = Task::for_test("Remote-only task".to_owned());
+        let remote_snapshot = SyncSnapshot::new(
+            Uuid::new_v4(),
+            vec![
+                SyncEntity::from_task(&shared_task).unwrap(),
+                SyncEntity::from_task(&remote_task).unwrap(),
+            ],
+        );
+        let remote_payload = serde_json::to_vec(&remote_snapshot).unwrap();
+        transport
+            .payload
+            .lock()
+            .unwrap()
+            .replace(remote_payload.clone());
+
+        let result = service.sync_now().await.unwrap();
+
+        assert_eq!(result.status, SyncStatus::Synced);
+        assert!(!result.uploaded);
+        assert_eq!(
+            transport.payload.lock().unwrap().as_deref(),
+            Some(remote_payload.as_slice())
+        );
+        assert_eq!(
+            repository.get(remote_task.id).unwrap().unwrap().title,
+            "Remote-only task"
+        );
+    }
+
+    #[tokio::test]
     async fn unencrypted_sync_does_not_require_an_encryption_passphrase() {
         let repository = Arc::new(SqliteTaskRepository::in_memory().unwrap());
         let config = SyncConfig {
@@ -441,6 +580,8 @@ mod tests {
             username: "alice".to_owned(),
             encryption_enabled: false,
             paused: false,
+            strategy: SyncStrategy::SmartMerge,
+            frequency: SyncFrequency::FiveMinutes,
         };
         repository.save_sync_config(&config).unwrap();
         repository
@@ -472,6 +613,8 @@ mod tests {
             username: "alice".to_owned(),
             encryption_enabled: true,
             paused: false,
+            strategy: SyncStrategy::SmartMerge,
+            frequency: SyncFrequency::FiveMinutes,
         };
         repository.save_sync_config(&config).unwrap();
         let task = Task::for_test("Base title".to_owned());
@@ -530,6 +673,8 @@ mod tests {
             username: "alice".to_owned(),
             encryption_enabled: false,
             paused: false,
+            strategy: SyncStrategy::SmartMerge,
+            frequency: SyncFrequency::FiveMinutes,
         };
         repository.save_sync_config(&config).unwrap();
         let credentials = Arc::new(FakeCredentials::default());

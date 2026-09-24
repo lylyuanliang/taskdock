@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -110,6 +111,30 @@ pub enum SyncStrategy {
     KeepRemote,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SyncFrequency {
+    OneMinute,
+    FiveMinutes,
+    FifteenMinutes,
+    ThirtyMinutes,
+    OneHour,
+    Manual,
+}
+
+impl SyncFrequency {
+    pub fn automatic_interval(self) -> Option<Duration> {
+        match self {
+            Self::OneMinute => Some(Duration::from_secs(60)),
+            Self::FiveMinutes => Some(Duration::from_secs(5 * 60)),
+            Self::FifteenMinutes => Some(Duration::from_secs(15 * 60)),
+            Self::ThirtyMinutes => Some(Duration::from_secs(30 * 60)),
+            Self::OneHour => Some(Duration::from_secs(60 * 60)),
+            Self::Manual => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SyncConfig {
@@ -118,6 +143,8 @@ pub struct SyncConfig {
     pub username: String,
     pub encryption_enabled: bool,
     pub paused: bool,
+    pub strategy: SyncStrategy,
+    pub frequency: SyncFrequency,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]

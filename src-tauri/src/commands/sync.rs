@@ -4,7 +4,7 @@ use tauri::State;
 use crate::{
     domain::{
         ports::SyncRepository,
-        sync::{SyncConfig, SyncEntityKind, SyncState, SyncStatus, SyncStrategy},
+        sync::{SyncConfig, SyncEntityKind, SyncFrequency, SyncState, SyncStatus, SyncStrategy},
         sync_merge::SyncFieldConflict,
         sync_service::SyncRunSummary,
     },
@@ -23,6 +23,8 @@ pub(crate) struct SaveSyncConfigInput {
     pub(crate) encryption_passphrase: String,
     pub(crate) encryption_enabled: bool,
     pub(crate) paused: bool,
+    pub(crate) strategy: SyncStrategy,
+    pub(crate) frequency: SyncFrequency,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -42,6 +44,8 @@ pub(crate) struct SyncConfigDto {
     username: String,
     encryption_enabled: bool,
     paused: bool,
+    strategy: SyncStrategy,
+    frequency: SyncFrequency,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -122,6 +126,8 @@ pub(crate) fn save_sync_config(
         username: username.clone(),
         encryption_enabled: input.encryption_enabled,
         paused: input.paused,
+        strategy: input.strategy,
+        frequency: input.frequency,
     };
     state
         .sync_credentials
@@ -186,6 +192,8 @@ fn normalize_test_connection_input(
             username,
             encryption_enabled: false,
             paused: false,
+            strategy: SyncStrategy::SmartMerge,
+            frequency: SyncFrequency::FiveMinutes,
         },
         input.webdav_password,
     ))
@@ -311,6 +319,8 @@ impl From<SyncConfig> for SyncConfigDto {
             username: config.username,
             encryption_enabled: config.encryption_enabled,
             paused: config.paused,
+            strategy: config.strategy,
+            frequency: config.frequency,
         }
     }
 }

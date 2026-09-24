@@ -17,7 +17,10 @@ use crate::{
         },
         project::Project,
         recurrence::TaskCompletion,
-        sync::{SyncConfig, SyncEntity, SyncEntityKind, SyncSnapshot, SyncState},
+        sync::{
+            SyncConfig, SyncEntity, SyncEntityKind, SyncFrequency, SyncSnapshot, SyncState,
+            SyncStrategy,
+        },
         sync_merge::SyncFieldConflict,
         task::{Priority, RecurrenceRule, ReminderClaimStateUpdate, Task},
         task_query::{TaskSummaryDto, TaskView},
@@ -36,6 +39,8 @@ const TASK_REVISION_MIGRATION: &str = include_str!("../../migrations/0006_task_r
 const REMINDER_DELIVERY_LEASE_MIGRATION: &str =
     include_str!("../../migrations/0007_reminder_delivery_lease.sql");
 const SYNC_MIGRATION: &str = include_str!("../../migrations/0008_sync.sql");
+const SYNC_STRATEGY_MIGRATION: &str = include_str!("../../migrations/0009_sync_strategy.sql");
+const SYNC_FREQUENCY_MIGRATION: &str = include_str!("../../migrations/0010_sync_frequency.sql");
 const MIGRATIONS: &[(i64, &str)] = &[
     (1, INITIAL_MIGRATION),
     (2, DAILY_WORKFLOW_MIGRATION),
@@ -45,6 +50,8 @@ const MIGRATIONS: &[(i64, &str)] = &[
     (6, TASK_REVISION_MIGRATION),
     (7, REMINDER_DELIVERY_LEASE_MIGRATION),
     (8, SYNC_MIGRATION),
+    (9, SYNC_STRATEGY_MIGRATION),
+    (10, SYNC_FREQUENCY_MIGRATION),
 ];
 const STORAGE_ERROR_CODE: &str = "storage.unavailable";
 const STORAGE_ERROR_KEY: &str = "errors.storage.unavailable";
@@ -302,7 +309,7 @@ impl SyncRepository for SqliteTaskRepository {
         self.with_connection(|connection| {
             connection
                 .query_row(
-                    "SELECT endpoint, remote_directory, username, encryption_enabled, paused \
+                    "SELECT endpoint, remote_directory, username, encryption_enabled, paused, strategy, frequency \
                      FROM todo_sync_config WHERE id = 1",
                     params![],
                     |row| {
@@ -312,6 +319,8 @@ impl SyncRepository for SqliteTaskRepository {
                             username: row.get(2)?,
                             encryption_enabled: row.get::<_, i64>(3)? != 0,
                             paused: row.get::<_, i64>(4)? != 0,
+                            strategy: parse_sync_strategy(row.get(5)?)?,
+                            frequency: parse_sync_frequency(row.get(6)?)?,
                         })
                     },
                 )
@@ -326,19 +335,21 @@ impl SyncRepository for SqliteTaskRepository {
             connection
                 .execute(
                     "INSERT INTO todo_sync_config (\
-                     id, endpoint, remote_directory, username, encryption_enabled, paused, \
+                     id, endpoint, remote_directory, username, encryption_enabled, paused, strategy, frequency, \
                      created_at, updated_at\
-                     ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?6)\
+                     ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)\
                      ON CONFLICT(id) DO UPDATE SET endpoint = excluded.endpoint, \
                      remote_directory = excluded.remote_directory, username = excluded.username, \
                      encryption_enabled = excluded.encryption_enabled, paused = excluded.paused, \
-                     updated_at = excluded.updated_at",
+                     strategy = excluded.strategy, frequency = excluded.frequency, updated_at = excluded.updated_at",
                     params![
                         config.endpoint,
                         config.remote_directory,
                         config.username,
                         i64::from(config.encryption_enabled),
                         i64::from(config.paused),
+                        sync_strategy_to_storage(config.strategy),
+                        sync_frequency_to_storage(config.frequency),
                         now,
                     ],
                 )
@@ -1771,6 +1782,60 @@ fn parse_merge_decision(value: &str) -> Option<crate::domain::sync_merge::MergeD
         "acceptRemote" => Some(crate::domain::sync_merge::MergeDecision::AcceptRemote),
         "createConflictCopy" => Some(crate::domain::sync_merge::MergeDecision::CreateConflictCopy),
         _ => None,
+    }
+}
+
+fn sync_strategy_to_storage(strategy: SyncStrategy) -> &'static str {
+    match strategy {
+        SyncStrategy::SmartMerge => "smartMerge",
+        SyncStrategy::KeepLocal => "keepLocal",
+        SyncStrategy::KeepRemote => "keepRemote",
+    }
+}
+
+fn parse_sync_strategy(value: String) -> rusqlite::Result<SyncStrategy> {
+    match value.as_str() {
+        "smartMerge" => Ok(SyncStrategy::SmartMerge),
+        "keepLocal" => Ok(SyncStrategy::KeepLocal),
+        "keepRemote" => Ok(SyncStrategy::KeepRemote),
+        _ => Err(rusqlite::Error::FromSqlConversionFailure(
+            5,
+            rusqlite::types::Type::Text,
+            Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("invalid sync strategy: {value}"),
+            )),
+        )),
+    }
+}
+
+fn sync_frequency_to_storage(frequency: SyncFrequency) -> &'static str {
+    match frequency {
+        SyncFrequency::OneMinute => "oneMinute",
+        SyncFrequency::FiveMinutes => "fiveMinutes",
+        SyncFrequency::FifteenMinutes => "fifteenMinutes",
+        SyncFrequency::ThirtyMinutes => "thirtyMinutes",
+        SyncFrequency::OneHour => "oneHour",
+        SyncFrequency::Manual => "manual",
+    }
+}
+
+fn parse_sync_frequency(value: String) -> rusqlite::Result<SyncFrequency> {
+    match value.as_str() {
+        "oneMinute" => Ok(SyncFrequency::OneMinute),
+        "fiveMinutes" => Ok(SyncFrequency::FiveMinutes),
+        "fifteenMinutes" => Ok(SyncFrequency::FifteenMinutes),
+        "thirtyMinutes" => Ok(SyncFrequency::ThirtyMinutes),
+        "oneHour" => Ok(SyncFrequency::OneHour),
+        "manual" => Ok(SyncFrequency::Manual),
+        _ => Err(rusqlite::Error::FromSqlConversionFailure(
+            6,
+            rusqlite::types::Type::Text,
+            Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("invalid sync frequency: {value}"),
+            )),
+        )),
     }
 }
 

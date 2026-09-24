@@ -17,7 +17,10 @@ use crate::{
         },
         project::Project,
         recurrence::{complete_task, Frequency, RecurrenceRule},
-        sync::{SyncConfig, SyncEntity, SyncEntityKind, SyncSnapshot, SyncState, SyncStatus},
+        sync::{
+            SyncConfig, SyncEntity, SyncEntityKind, SyncFrequency, SyncSnapshot, SyncState,
+            SyncStatus, SyncStrategy,
+        },
         sync_merge::SyncFieldConflict,
         task::{Priority, ReminderClaimStateUpdate, Task, TaskPatch},
         task_service::TaskService,
@@ -96,7 +99,7 @@ fn concurrent_file_connections_apply_migrations_once() -> Result<(), Box<dyn std
             row.get(0)
         })?;
 
-    assert_eq!(applied_versions, vec![1, 2, 3, 4, 5, 6, 7, 8]);
+    assert_eq!(applied_versions, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
     assert_eq!(task_rows, 0);
 
     Ok(())
@@ -274,7 +277,7 @@ fn task_revision_migration_upgrades_version_five_without_losing_reminder_data(
     assert_eq!(row.3, "2026-09-09T08:55:00Z");
     assert_eq!(row.4, claim_token.to_string());
     assert_eq!(row.5, 1);
-    assert_eq!(applied_versions, vec![1, 2, 3, 4, 5, 6, 7, 8]);
+    assert_eq!(applied_versions, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
 
     Ok(())
 }
@@ -334,7 +337,7 @@ fn reminder_delivery_lease_migration_upgrades_version_six_without_losing_deliver
 
     assert_eq!(row.0, delivered_at);
     assert_eq!(row.1, None);
-    assert_eq!(applied_versions, vec![1, 2, 3, 4, 5, 6, 7, 8]);
+    assert_eq!(applied_versions, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
 
     Ok(())
 }
@@ -1366,6 +1369,8 @@ fn sqlite_sync_configuration_and_state_are_singletons() {
         username: "user".to_owned(),
         encryption_enabled: true,
         paused: false,
+        strategy: SyncStrategy::SmartMerge,
+        frequency: SyncFrequency::OneHour,
     };
 
     assert_eq!(repository.get_sync_config().unwrap(), None);
@@ -1374,6 +1379,7 @@ fn sqlite_sync_configuration_and_state_are_singletons() {
 
     let mut updated_config = config;
     updated_config.paused = true;
+    updated_config.strategy = SyncStrategy::KeepRemote;
     repository.save_sync_config(&updated_config).unwrap();
     assert_eq!(repository.get_sync_config().unwrap(), Some(updated_config));
 
