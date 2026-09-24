@@ -27,6 +27,7 @@ SYNC_MOCK = r"""
   };
   let config = null;
   let paused = false;
+  let rejectNextTest = false;
   let preserveConflictsOnNextSync = false;
   let conflicts = [{
     entityId: "task-inbox-1",
@@ -73,6 +74,13 @@ SYNC_MOCK = r"""
     }
     if (command === "test_sync_connection") {
       record(command, args);
+      if (rejectNextTest) {
+        rejectNextTest = false;
+        throw {
+          code: "sync.remote.authentication_failed",
+          message_key: "errors.sync.remote.authentication_failed",
+        };
+      }
       return { ok: true };
     }
     if (command === "sync_now") {
@@ -119,6 +127,9 @@ SYNC_MOCK = r"""
       baseValue: "Base title",
     }];
   };
+  window.__taskDockMock.rejectNextTest = () => {
+    rejectNextTest = true;
+  };
 })();
 """
 
@@ -134,14 +145,38 @@ def run_sync_flow(page: Page) -> None:
     page.get_by_label("Account").fill("e2e-user")
     page.get_by_label("Password").fill("e2e-password")
     page.get_by_label("Encryption passphrase").fill("e2e-passphrase")
+
+    page.get_by_role("button", name="Test connection").click()
+    wait_for_call(
+        page,
+        "test_sync_connection",
+        {
+            "input": {
+                "endpoint": "https://dav.example.test/remote.php/dav/files/user",
+                "remoteDirectory": "taskdock-sync",
+                "username": "e2e-user",
+                "webdavPassword": "e2e-password",
+            }
+        },
+    )
+    expect(
+        page.get_by_text("Connection successful; WebDAV is available.", exact=True)
+    ).to_be_visible()
+    assert len([call for call in calls(page) if call["command"] == "save_sync_config"]) == 0
+
+    page.evaluate("() => window.__taskDockMock.rejectNextTest()")
+    page.get_by_role("button", name="Test connection").click()
+    expect(
+        page.get_by_text("The account or third-party app password is incorrect.", exact=True)
+    ).to_be_visible()
+    assert "e2e-password" not in page.locator("body").inner_text()
+
     page.get_by_role("button", name="Save settings").click()
     page.get_by_text("Settings saved", exact=True).wait_for()
     save_calls = [call for call in calls(page) if call["command"] == "save_sync_config"]
     assert len(save_calls) == 1
     assert save_calls[0]["args"]["input"]["webdavPassword"] == "e2e-password"
 
-    page.get_by_role("button", name="Test connection").click()
-    wait_for_call(page, "test_sync_connection", {})
     page.locator(".sync-page__actions").get_by_role("button", name="Initial sync").click()
     expect(page.get_by_role("heading", name="Prepare initial sync", level=2)).to_be_visible()
     page.get_by_role("radio", name="Use remote").click()
@@ -222,6 +257,7 @@ def main() -> None:
             browser = playwright.chromium.launch(executable_path=str(CHROME), headless=True)
             try:
                 page = browser.new_page(viewport={"width": 1280, "height": 900})
+                page.set_default_navigation_timeout(10_000)
                 run_page_flow(page, f"http://127.0.0.1:{port}/", run_sync_flow, SYNC_MOCK)
             finally:
                 browser.close()

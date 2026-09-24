@@ -29,6 +29,13 @@ export interface SaveSyncConfigInput {
   paused: boolean;
 }
 
+export interface TestSyncConnectionInput {
+  endpoint: string;
+  remoteDirectory: string;
+  username: string;
+  webdavPassword: string;
+}
+
 export interface SyncStateDto {
   status: SyncStatus;
   lastSyncedAt: string | null;
@@ -69,8 +76,8 @@ export async function saveSyncConfig(input: SaveSyncConfigInput): Promise<SyncCo
   return invoke<SyncConfigDto>("save_sync_config", { input });
 }
 
-export async function testSyncConnection(): Promise<{ ok: boolean }> {
-  return invoke<{ ok: boolean }>("test_sync_connection");
+export async function testSyncConnection(input: TestSyncConnectionInput): Promise<{ ok: boolean }> {
+  return invoke<{ ok: boolean }>("test_sync_connection", { input });
 }
 
 export async function getSyncStatus(): Promise<SyncStateDto> {

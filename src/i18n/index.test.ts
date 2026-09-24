@@ -23,6 +23,19 @@ const backendErrorKeys = [
   "errors.task.parent.write.unsupported",
   "errors.task.subtask.project.inherited",
   "errors.storage.unavailable",
+  "errors.sync.input.invalid",
+  "errors.sync.configuration.invalid",
+  "errors.sync.configuration.missing",
+  "errors.sync.remote.authentication_failed",
+  "errors.sync.remote.path_not_found",
+  "errors.sync.remote.method_not_allowed",
+  "errors.sync.remote.network_unavailable",
+  "errors.sync.remote.timeout",
+  "errors.sync.remote.unavailable",
+  "errors.sync.encryption.failed",
+  "errors.sync.credential.failed",
+  "errors.sync.snapshot.invalid",
+  "errors.sync.worker.unavailable",
 ] as const;
 
 describe("resolveLocale", () => {

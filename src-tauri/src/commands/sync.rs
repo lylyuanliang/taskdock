@@ -25,6 +25,15 @@ pub(crate) struct SaveSyncConfigInput {
     pub(crate) paused: bool,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub(crate) struct TestSyncConnectionInput {
+    pub(crate) endpoint: String,
+    pub(crate) remote_directory: String,
+    pub(crate) username: String,
+    pub(crate) webdav_password: String,
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct SyncConfigDto {
@@ -146,13 +155,40 @@ pub(crate) fn save_sync_config(
 #[tauri::command]
 pub(crate) async fn test_sync_connection(
     state: State<'_, AppState>,
+    input: TestSyncConnectionInput,
 ) -> Result<SyncConnectionDto, SyncCommandError> {
+    let (config, password) = normalize_test_connection_input(input)?;
     state
         .sync_service
-        .test_connection()
+        .test_connection_with_config(&config, &password)
         .await
         .map(|_| SyncConnectionDto { ok: true })
         .map_err(Into::into)
+}
+
+fn normalize_test_connection_input(
+    input: TestSyncConnectionInput,
+) -> Result<(SyncConfig, String), SyncCommandError> {
+    let endpoint = input.endpoint.trim().to_owned();
+    let remote_directory = input.remote_directory.trim().to_owned();
+    let username = input.username.trim().to_owned();
+    if endpoint.is_empty() || remote_directory.is_empty() || username.is_empty() {
+        return Err(SyncCommandError::invalid_input());
+    }
+    if input.webdav_password.is_empty() {
+        return Err(SyncCommandError::invalid_input());
+    }
+
+    Ok((
+        SyncConfig {
+            endpoint,
+            remote_directory,
+            username,
+            encryption_enabled: false,
+            paused: false,
+        },
+        input.webdav_password,
+    ))
 }
 
 #[tauri::command]
@@ -334,5 +370,23 @@ impl SyncCommandError {
             code: "sync.configuration.missing".to_owned(),
             message_key: "errors.sync.configuration.missing".to_owned(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{normalize_test_connection_input, SyncCommandError, TestSyncConnectionInput};
+
+    #[test]
+    fn rejects_blank_test_connection_fields_without_touching_persistence() {
+        let error = normalize_test_connection_input(TestSyncConnectionInput {
+            endpoint: " ".to_owned(),
+            remote_directory: "taskdock-sync".to_owned(),
+            username: "user".to_owned(),
+            webdav_password: "password".to_owned(),
+        })
+        .unwrap_err();
+
+        assert_eq!(error, SyncCommandError::invalid_input());
     }
 }

@@ -1,7 +1,13 @@
 import { Check, Cloud, LockKeyhole, Play, RefreshCw, Save, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
-import type { SaveSyncConfigInput, SyncConfigDto, SyncStateDto } from "../../api/sync";
-import { t, type TranslationKey } from "../../i18n";
+import type {
+  SaveSyncConfigInput,
+  SyncConfigDto,
+  SyncStateDto,
+  TestSyncConnectionInput,
+} from "../../api/sync";
+import { getCommandErrorMessageKey } from "../tasks/taskTypes";
+import { isTranslationKey, t, type TranslationKey } from "../../i18n";
 
 interface SyncSettingsPageProps {
   config: SyncConfigDto | null;
@@ -13,7 +19,7 @@ interface SyncSettingsPageProps {
   onResume: () => void | Promise<void>;
   onSave: (input: SaveSyncConfigInput) => Promise<void>;
   onSyncNow: () => Promise<void>;
-  onTestConnection: () => Promise<void>;
+  onTestConnection: (input: TestSyncConnectionInput) => Promise<void>;
 }
 
 const emptyForm: SaveSyncConfigInput = {
@@ -83,19 +89,32 @@ export default function SyncSettingsPage({
     try {
       await onSave(form);
       setMessage(t("settings.saved"));
-    } catch {
-      setMessage(t("settings.saveFailed"));
+    } catch (error: unknown) {
+      setMessage(getErrorMessage(error, "settings.saveFailed"));
     }
   }
 
-  async function handleAction(action: () => void | Promise<void>) {
+  async function handleAction(
+    action: () => void | Promise<void>,
+    successKey: TranslationKey = "settings.actionComplete",
+  ) {
     setMessage(null);
     try {
       await action();
-      setMessage(t("settings.actionComplete"));
-    } catch {
-      setMessage(t("settings.actionFailed"));
+      setMessage(t(successKey));
+    } catch (error: unknown) {
+      setMessage(getErrorMessage(error, "settings.actionFailed"));
     }
+  }
+
+  function getErrorMessage(error: unknown, fallbackKey: TranslationKey): string {
+    const messageKey = getCommandErrorMessageKey(error);
+
+    if (messageKey === "errors.unknown") {
+      return t(fallbackKey);
+    }
+
+    return isTranslationKey(messageKey) ? t(messageKey) : t(fallbackKey);
   }
 
   return (
@@ -175,7 +194,18 @@ export default function SyncSettingsPage({
           </div>
           <button
             className="sync-button sync-button--secondary"
-            onClick={() => void handleAction(onTestConnection)}
+            onClick={() =>
+              void handleAction(
+                () =>
+                  onTestConnection({
+                    endpoint: form.endpoint,
+                    remoteDirectory: form.remoteDirectory,
+                    username: form.username,
+                    webdavPassword: form.webdavPassword,
+                  }),
+                "settings.sync.connectionSuccess",
+              )
+            }
             type="button"
           >
             <RefreshCw aria-hidden="true" size={15} />

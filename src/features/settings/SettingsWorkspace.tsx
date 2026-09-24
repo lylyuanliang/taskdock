@@ -16,6 +16,7 @@ import {
   type SyncRunSummary,
   type SyncStateDto,
   type SyncStrategy,
+  type TestSyncConnectionInput,
 } from "../../api/sync";
 import { t } from "../../i18n";
 import InitialSyncPage from "../sync/InitialSyncPage";
@@ -90,8 +91,8 @@ export default function SettingsWorkspace({ onBack }: SettingsWorkspaceProps) {
     setState(await resumeSync());
   }
 
-  async function handleTestConnection() {
-    await testSyncConnection();
+  async function handleTestConnection(input: TestSyncConnectionInput) {
+    await testSyncConnection(input);
   }
 
   async function handleResolve(conflict: SyncConflictDto, decision: SyncConflictDecision) {

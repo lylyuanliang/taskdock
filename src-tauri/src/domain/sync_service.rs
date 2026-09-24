@@ -173,17 +173,12 @@ where
         Ok(summary_from_plan(&plan, SyncStatus::Synced, true))
     }
 
-    pub async fn test_connection(&self) -> Result<(), AppError> {
-        let config = self
-            .repository
-            .get_sync_config()?
-            .ok_or_else(configuration_error)?;
-        let password_key = webdav_password_key(&config.username);
-        let password = self
-            .credentials
-            .load_secret(&password_key)?
-            .ok_or_else(configuration_error)?;
-        self.transport.test_connection(&config, &password).await
+    pub(crate) async fn test_connection_with_config(
+        &self,
+        config: &super::sync::SyncConfig,
+        password: &str,
+    ) -> Result<(), AppError> {
+        self.transport.test_connection(config, password).await
     }
 
     fn record_sync_failure(&self, error: &AppError) -> Result<(), AppError> {
@@ -376,6 +371,30 @@ mod tests {
     #[test]
     fn password_key_is_namespaced() {
         assert_eq!(webdav_password_key("alice"), "webdav:alice");
+    }
+
+    #[tokio::test]
+    async fn tests_a_draft_connection_without_saved_config_or_credentials() {
+        let repository = Arc::new(SqliteTaskRepository::in_memory().unwrap());
+        let credentials = Arc::new(FakeCredentials::default());
+        let transport = Arc::new(FakeTransport::default());
+        let service = SyncService::new(
+            Arc::clone(&repository),
+            Arc::clone(&transport),
+            Arc::clone(&credentials),
+        );
+        let config = SyncConfig {
+            endpoint: "https://dav.example.test/dav/".to_owned(),
+            remote_directory: "taskdock-sync".to_owned(),
+            username: "user@example.com".to_owned(),
+            encryption_enabled: true,
+            paused: false,
+        };
+
+        service
+            .test_connection_with_config(&config, "third-party-password")
+            .await
+            .unwrap();
     }
 
     #[tokio::test]

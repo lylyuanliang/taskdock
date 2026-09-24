@@ -13,6 +13,14 @@ const REMOTE_ERROR_CODE: &str = "sync.remote.unavailable";
 const REMOTE_ERROR_KEY: &str = "errors.sync.remote.unavailable";
 const AUTH_ERROR_CODE: &str = "sync.remote.authentication_failed";
 const AUTH_ERROR_KEY: &str = "errors.sync.remote.authentication_failed";
+const PATH_NOT_FOUND_ERROR_CODE: &str = "sync.remote.path_not_found";
+const PATH_NOT_FOUND_ERROR_KEY: &str = "errors.sync.remote.path_not_found";
+const METHOD_NOT_ALLOWED_ERROR_CODE: &str = "sync.remote.method_not_allowed";
+const METHOD_NOT_ALLOWED_ERROR_KEY: &str = "errors.sync.remote.method_not_allowed";
+const NETWORK_ERROR_CODE: &str = "sync.remote.network_unavailable";
+const NETWORK_ERROR_KEY: &str = "errors.sync.remote.network_unavailable";
+const TIMEOUT_ERROR_CODE: &str = "sync.remote.timeout";
+const TIMEOUT_ERROR_KEY: &str = "errors.sync.remote.timeout";
 const CONFIG_ERROR_CODE: &str = "sync.configuration.invalid";
 const CONFIG_ERROR_KEY: &str = "errors.sync.configuration.invalid";
 
@@ -99,16 +107,28 @@ impl WebDavClient {
         password: &str,
         body: Option<&[u8]>,
     ) -> Result<reqwest::Response, AppError> {
+        let is_propfind = method.as_str() == "PROPFIND";
         let mut request = self
             .client
             .request(method, url)
             .basic_auth(username, Some(password));
+        if is_propfind {
+            request = request.header("Depth", "0");
+        }
         if let Some(body) = body {
             request = request
                 .header(CONTENT_TYPE, "application/octet-stream")
                 .body(body.to_vec());
         }
-        request.send().await.map_err(|_| remote_error())
+        request.send().await.map_err(|error| {
+            if error.is_timeout() {
+                timeout_error()
+            } else if error.is_connect() {
+                network_error()
+            } else {
+                remote_error()
+            }
+        })
     }
 
     async fn ensure_remote_directory(
@@ -148,15 +168,11 @@ impl WebDavClient {
     }
 
     fn validate_response(response: &reqwest::Response) -> Result<(), AppError> {
-        if response.status() == StatusCode::UNAUTHORIZED
-            || response.status() == StatusCode::FORBIDDEN
-        {
-            return Err(authentication_error());
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            Err(error_for_status(response.status()))
         }
-        if !response.status().is_success() {
-            return Err(remote_error());
-        }
-        Ok(())
     }
 }
 
@@ -236,10 +252,44 @@ fn authentication_error() -> AppError {
     AppError::new(AUTH_ERROR_CODE, AUTH_ERROR_KEY, AppErrorKind::Remote)
 }
 
+fn path_not_found_error() -> AppError {
+    AppError::new(
+        PATH_NOT_FOUND_ERROR_CODE,
+        PATH_NOT_FOUND_ERROR_KEY,
+        AppErrorKind::Remote,
+    )
+}
+
+fn method_not_allowed_error() -> AppError {
+    AppError::new(
+        METHOD_NOT_ALLOWED_ERROR_CODE,
+        METHOD_NOT_ALLOWED_ERROR_KEY,
+        AppErrorKind::Remote,
+    )
+}
+
+fn network_error() -> AppError {
+    AppError::new(NETWORK_ERROR_CODE, NETWORK_ERROR_KEY, AppErrorKind::Remote)
+}
+
+fn timeout_error() -> AppError {
+    AppError::new(TIMEOUT_ERROR_CODE, TIMEOUT_ERROR_KEY, AppErrorKind::Remote)
+}
+
+fn error_for_status(status: StatusCode) -> AppError {
+    match status {
+        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => authentication_error(),
+        StatusCode::NOT_FOUND => path_not_found_error(),
+        StatusCode::METHOD_NOT_ALLOWED => method_not_allowed_error(),
+        _ => remote_error(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{configuration_error, WebDavClient};
+    use super::{configuration_error, error_for_status, WebDavClient};
     use crate::domain::sync::SyncConfig;
+    use reqwest::StatusCode;
 
     fn config(endpoint: &str, directory: &str) -> SyncConfig {
         SyncConfig {
@@ -288,6 +338,30 @@ mod tests {
                 .unwrap_err()
                 .code(),
             configuration_error().code()
+        );
+    }
+
+    #[test]
+    fn classifies_webdav_authentication_failures() {
+        assert_eq!(
+            error_for_status(StatusCode::UNAUTHORIZED).code(),
+            "sync.remote.authentication_failed"
+        );
+        assert_eq!(
+            error_for_status(StatusCode::FORBIDDEN).code(),
+            "sync.remote.authentication_failed"
+        );
+    }
+
+    #[test]
+    fn classifies_missing_paths_and_unsupported_methods() {
+        assert_eq!(
+            error_for_status(StatusCode::NOT_FOUND).code(),
+            "sync.remote.path_not_found"
+        );
+        assert_eq!(
+            error_for_status(StatusCode::METHOD_NOT_ALLOWED).code(),
+            "sync.remote.method_not_allowed"
         );
     }
 }

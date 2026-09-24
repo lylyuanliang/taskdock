@@ -5,6 +5,24 @@ export const enUS: Record<TranslationKey, string> = {
   "app.subtitle": "Technical Calm",
   "workspace.label": "Workspace",
   "errors.storage.unavailable": "Local storage is temporarily unavailable",
+  "errors.sync.input.invalid": "Enter a server URL, remote directory, account, and password.",
+  "errors.sync.configuration.invalid":
+    "The server URL is invalid; use an HTTP or HTTPS WebDAV URL.",
+  "errors.sync.configuration.missing": "Enter and save the sync settings first.",
+  "errors.sync.remote.authentication_failed":
+    "The account or third-party app password is incorrect.",
+  "errors.sync.remote.path_not_found": "The server URL or remote directory was not found.",
+  "errors.sync.remote.method_not_allowed":
+    "The server does not support this WebDAV operation; check the URL.",
+  "errors.sync.remote.network_unavailable":
+    "Unable to reach the WebDAV server; check the network or certificate.",
+  "errors.sync.remote.timeout": "The WebDAV connection timed out; check the network.",
+  "errors.sync.remote.unavailable":
+    "The WebDAV server is temporarily unavailable; try again later.",
+  "errors.sync.encryption.failed": "Sync data encryption failed.",
+  "errors.sync.credential.failed": "Windows Credential Manager is unavailable.",
+  "errors.sync.snapshot.invalid": "The remote sync snapshot is invalid or corrupted.",
+  "errors.sync.worker.unavailable": "The sync background service is temporarily unavailable.",
   "errors.task.already_completed": "This task is already completed.",
   "errors.task.completion.use_complete": "Complete tasks with the dedicated completion action.",
   "errors.task.concurrent_update":
@@ -86,6 +104,7 @@ export const enUS: Record<TranslationKey, string> = {
   "settings.sync.username": "Account",
   "settings.sync.password": "Password",
   "settings.sync.testConnection": "Test connection",
+  "settings.sync.connectionSuccess": "Connection successful; WebDAV is available.",
   "settings.sync.encryption": "End-to-end encryption",
   "settings.sync.encryptionDescription": "Snapshots are encrypted before leaving this device.",
   "settings.sync.encryptionEnabled": "Enable encryption",
