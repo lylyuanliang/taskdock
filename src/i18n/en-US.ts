@@ -4,6 +4,12 @@ export const enUS: Record<TranslationKey, string> = {
   "app.title": "TaskDock",
   "app.subtitle": "Technical Calm",
   "workspace.label": "Workspace",
+  "mobile.unsavedChanges": "Your changes are not saved.",
+  "mobile.discardChanges": "Discard changes",
+  "mobile.back": "Back",
+  "mobile.route.local": "LOCAL",
+  "mobile.route.sync": "SYNC",
+  "mobile.route.webdav": "WEBDAV",
   "errors.storage.unavailable": "Local storage is temporarily unavailable",
   "errors.sync.input.invalid": "Enter a server URL, remote directory, account, and password.",
   "errors.sync.configuration.invalid":
@@ -23,6 +29,11 @@ export const enUS: Record<TranslationKey, string> = {
   "errors.sync.credential.failed": "Windows Credential Manager is unavailable.",
   "errors.sync.snapshot.invalid": "The remote sync snapshot is invalid or corrupted.",
   "errors.sync.worker.unavailable": "The sync background service is temporarily unavailable.",
+  "sync.config.invalid": "Complete the sync configuration first.",
+  "sync.auth.failed": "Sync account authentication failed.",
+  "sync.network.timeout": "The sync network is unavailable or timed out.",
+  "sync.encryption.failed": "Sync data encryption failed.",
+  "sync.conflict.pending": "There are unresolved sync conflicts.",
   "errors.task.already_completed": "This task is already completed.",
   "errors.task.completion.use_complete": "Complete tasks with the dedicated completion action.",
   "errors.task.concurrent_update":
@@ -75,6 +86,7 @@ export const enUS: Record<TranslationKey, string> = {
   "settings.comingSoonDescription": "This settings area is reserved for a later release.",
   "settings.syncBack": "Back to sync settings",
   "settings.save": "Save settings",
+  "settings.saving": "Saving...",
   "settings.saved": "Settings saved",
   "settings.saveFailed": "Could not save settings",
   "settings.actionComplete": "Action complete",
@@ -104,6 +116,7 @@ export const enUS: Record<TranslationKey, string> = {
   "settings.sync.username": "Account",
   "settings.sync.password": "Password",
   "settings.sync.testConnection": "Test connection",
+  "settings.sync.connectionTesting": "Testing connection...",
   "settings.sync.connectionSuccess": "Connection successful; WebDAV is available.",
   "settings.sync.strategy": "Automatic sync strategy",
   "settings.sync.strategyHint":
@@ -114,6 +127,7 @@ export const enUS: Record<TranslationKey, string> = {
   "settings.sync.frequency": "Automatic sync frequency",
   "settings.sync.frequencyHint":
     "Only controls background checks; local changes still sync immediately.",
+  "settings.sync.pauseAutomatic": "Pause automatic sync",
   "settings.sync.oneMinute": "Every 1 minute",
   "settings.sync.fiveMinutes": "Every 5 minutes",
   "settings.sync.fifteenMinutes": "Every 15 minutes",
@@ -127,6 +141,7 @@ export const enUS: Record<TranslationKey, string> = {
   "settings.sync.encryptionPassphrase": "Encryption passphrase",
   "settings.sync.encryptionSafety":
     "The passphrase is never uploaded to WebDAV or written to SQLite.",
+  "settings.sync.androidKeystore": "Android Keystore secure storage",
   "settings.initialSync.eyebrow": "First connection / merge preview",
   "settings.initialSync.title": "Prepare initial sync",
   "settings.initialSync.description":
@@ -211,6 +226,7 @@ export const enUS: Record<TranslationKey, string> = {
   "task.subtask.parentDraft.saveFirst": "Save parent task changes before changing subtasks.",
   "task.subtask.unavailable": "Save the task before adding subtasks.",
   "tasks.empty": "No tasks in inbox.",
+  "tasks.completedToday": "Completed today",
   "tasks.inbox": "Inbox",
   "tasks.ledger": "Task ledger",
   "tasks.loading": "Loading tasks...",

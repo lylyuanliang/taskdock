@@ -10,6 +10,7 @@ use crate::{
     },
     error::AppError,
     infrastructure::sync_crypto::CredentialStore,
+    platform::lifecycle::SyncWorkerPort,
     AppState,
 };
 
@@ -111,14 +112,36 @@ pub(crate) fn save_sync_config(
     let endpoint = input.endpoint.trim().to_owned();
     let remote_directory = input.remote_directory.trim().to_owned();
     let username = input.username.trim().to_owned();
-    if endpoint.is_empty()
-        || remote_directory.is_empty()
-        || username.is_empty()
-        || input.webdav_password.is_empty()
-        || (input.encryption_enabled && input.encryption_passphrase.is_empty())
-    {
+    if endpoint.is_empty() || remote_directory.is_empty() || username.is_empty() {
         return Err(SyncCommandError::invalid_input());
     }
+
+    let existing_config = state
+        .sync_repository
+        .get_sync_config()
+        .map_err(SyncCommandError::from)?;
+    let keeps_existing_credentials = existing_config
+        .as_ref()
+        .is_some_and(|config| config.username == username);
+    let webdav_password = resolve_secret(
+        input.webdav_password,
+        &format!("webdav:{username}"),
+        keeps_existing_credentials,
+        state.sync_credentials.as_ref(),
+    )?;
+    let encryption_passphrase = if input.encryption_enabled {
+        resolve_secret(
+            input.encryption_passphrase,
+            &format!("encryption:{username}"),
+            keeps_existing_credentials
+                && existing_config
+                    .as_ref()
+                    .is_some_and(|config| config.encryption_enabled),
+            state.sync_credentials.as_ref(),
+        )?
+    } else {
+        String::new()
+    };
 
     let config = SyncConfig {
         endpoint,
@@ -131,15 +154,12 @@ pub(crate) fn save_sync_config(
     };
     state
         .sync_credentials
-        .save_secret(&format!("webdav:{username}"), &input.webdav_password)
+        .save_secret(&format!("webdav:{username}"), &webdav_password)
         .map_err(SyncCommandError::from)?;
     if input.encryption_enabled {
         state
             .sync_credentials
-            .save_secret(
-                &format!("encryption:{username}"),
-                &input.encryption_passphrase,
-            )
+            .save_secret(&format!("encryption:{username}"), &encryption_passphrase)
             .map_err(SyncCommandError::from)?;
     } else {
         state
@@ -156,6 +176,25 @@ pub(crate) fn save_sync_config(
     }
 
     Ok(SyncConfigDto::from(config))
+}
+
+fn resolve_secret(
+    provided: String,
+    key: &str,
+    can_reuse_existing: bool,
+    credentials: &dyn CredentialStore,
+) -> Result<String, SyncCommandError> {
+    if !provided.is_empty() {
+        return Ok(provided);
+    }
+    if !can_reuse_existing {
+        return Err(SyncCommandError::invalid_input());
+    }
+
+    credentials
+        .load_secret(key)
+        .map_err(SyncCommandError::from)?
+        .ok_or_else(SyncCommandError::invalid_input)
 }
 
 #[tauri::command]
@@ -385,7 +424,32 @@ impl SyncCommandError {
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_test_connection_input, SyncCommandError, TestSyncConnectionInput};
+    use std::collections::HashMap;
+
+    use crate::{error::AppError, infrastructure::sync_crypto::CredentialStore};
+
+    use super::{
+        normalize_test_connection_input, resolve_secret, SyncCommandError, TestSyncConnectionInput,
+    };
+
+    #[derive(Default)]
+    struct FakeCredentials {
+        secrets: HashMap<String, String>,
+    }
+
+    impl CredentialStore for FakeCredentials {
+        fn save_secret(&self, _key: &str, _secret: &str) -> Result<(), AppError> {
+            Ok(())
+        }
+
+        fn load_secret(&self, key: &str) -> Result<Option<String>, AppError> {
+            Ok(self.secrets.get(key).cloned())
+        }
+
+        fn delete_secret(&self, _key: &str) -> Result<(), AppError> {
+            Ok(())
+        }
+    }
 
     #[test]
     fn rejects_blank_test_connection_fields_without_touching_persistence() {
@@ -398,5 +462,27 @@ mod tests {
         .unwrap_err();
 
         assert_eq!(error, SyncCommandError::invalid_input());
+    }
+
+    #[test]
+    fn resolves_blank_input_from_existing_credential_store() {
+        let credentials = FakeCredentials {
+            secrets: HashMap::from([(String::from("webdav:alice"), String::from("secret"))]),
+        };
+
+        assert_eq!(
+            resolve_secret(String::new(), "webdav:alice", true, &credentials).unwrap(),
+            "secret"
+        );
+    }
+
+    #[test]
+    fn rejects_blank_input_when_existing_credentials_cannot_be_reused() {
+        let credentials = FakeCredentials::default();
+
+        assert_eq!(
+            resolve_secret(String::new(), "webdav:alice", false, &credentials),
+            Err(SyncCommandError::invalid_input())
+        );
     }
 }

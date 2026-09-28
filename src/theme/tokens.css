@@ -19,6 +19,11 @@
   --layout-page-gutter: 16px;
   --layout-page-gutter-compact: 16px;
   --layout-panel-gap: 12px;
+  --layout-mobile-gutter: 12px;
+  --layout-mobile-nav-height: 64px;
+  --layout-mobile-control-min-height: 40px;
+  --layout-mobile-section-gap: 12px;
+  --layout-mobile-divider-width: 1px;
   --elevation-recessed: inset 0 2px 4px color-mix(in srgb, var(--color-canvas) 70%, transparent);
 }
 
@@ -42,6 +47,11 @@
   --layout-page-gutter: 16px;
   --layout-page-gutter-compact: 16px;
   --layout-panel-gap: 12px;
+  --layout-mobile-gutter: 12px;
+  --layout-mobile-nav-height: 64px;
+  --layout-mobile-control-min-height: 40px;
+  --layout-mobile-section-gap: 12px;
+  --layout-mobile-divider-width: 1px;
   --elevation-recessed: inset 0 2px 4px
     color-mix(in srgb, var(--color-text-primary) 12%, transparent);
 }
@@ -66,5 +76,10 @@
   --layout-page-gutter: 16px;
   --layout-page-gutter-compact: 16px;
   --layout-panel-gap: 12px;
+  --layout-mobile-gutter: 12px;
+  --layout-mobile-nav-height: 64px;
+  --layout-mobile-control-min-height: 40px;
+  --layout-mobile-section-gap: 12px;
+  --layout-mobile-divider-width: 1px;
   --elevation-recessed: none;
 }

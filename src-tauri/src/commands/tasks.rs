@@ -17,8 +17,8 @@ use crate::{
         task_service::TaskService,
     },
     error::AppError,
+    platform::lifecycle::SyncWorkerPort,
     reminder_worker::ReminderRescanRequester,
-    sync_worker::SyncWorker,
     task_mutation_notification::{TaskMutationEvent, TaskMutationNotifier},
     AppState,
 };
@@ -633,7 +633,7 @@ where
     }
 }
 
-fn request_sync_after_mutation(worker: &SyncWorker, succeeded: bool) {
+fn request_sync_after_mutation(worker: &dyn SyncWorkerPort, succeeded: bool) {
     if succeeded {
         if let Err(error) = worker.request_sync() {
             eprintln!("sync background request failed: {error}");

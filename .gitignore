@@ -26,6 +26,8 @@ coverage/
 playwright-report/
 test-results/
 artifacts/screenshots/
+tests/e2e/artifacts/
+release-output/
 /.codegraph/
 *.tsbuildinfo
 vite.config.d.ts
@@ -33,6 +35,7 @@ vite.config.js
 src-tauri/target/
 src-tauri/target-*/
 src-tauri/gen/schemas/
+src-tauri/gen/
 *.sqlite3
 *.db
 

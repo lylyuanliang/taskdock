@@ -68,9 +68,11 @@ pub(crate) trait CredentialStore: Send + Sync {
     fn delete_secret(&self, key: &str) -> Result<(), AppError>;
 }
 
+#[cfg(windows)]
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct WindowsCredentialStore;
 
+#[cfg(windows)]
 impl CredentialStore for WindowsCredentialStore {
     fn save_secret(&self, key: &str, secret: &str) -> Result<(), AppError> {
         let entry = keyring::Entry::new(CREDENTIAL_SERVICE, key).map_err(|_| credential_error())?;
@@ -128,7 +130,7 @@ fn encryption_error() -> AppError {
     )
 }
 
-fn credential_error() -> AppError {
+pub(crate) fn credential_error() -> AppError {
     AppError::new(
         CREDENTIAL_ERROR_CODE,
         CREDENTIAL_ERROR_KEY,

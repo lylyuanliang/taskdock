@@ -1,0 +1,177 @@
+.mobile-shell {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 100dvh;
+  overflow: hidden;
+  color: var(--color-text-primary);
+  background: var(--color-canvas);
+}
+
+.mobile-shell__header {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  min-height: 64px;
+  padding: 12px var(--layout-mobile-gutter);
+  align-items: center;
+  gap: 8px;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.mobile-shell__back {
+  display: grid;
+  width: var(--layout-mobile-control-min-height);
+  height: var(--layout-mobile-control-min-height);
+  padding: 0;
+  color: var(--color-text-secondary);
+  place-items: center;
+  background: var(--color-transparent);
+  border: 1px solid var(--color-transparent);
+  border-radius: var(--radius-control);
+}
+
+.mobile-shell__back:hover,
+.mobile-shell__back:focus-visible {
+  color: var(--color-text-primary);
+  background: var(--color-surface-high);
+  border-color: var(--color-border);
+}
+
+.mobile-shell__heading {
+  min-width: 0;
+}
+
+.mobile-shell__eyebrow,
+.mobile-shell__route,
+.mobile-shell__slot-label {
+  color: var(--color-text-secondary);
+  font-family: "JetBrains Mono", Consolas, monospace;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  line-height: 1.3;
+  text-transform: uppercase;
+}
+
+.mobile-shell__heading h1 {
+  margin: 2px 0 0;
+  overflow: hidden;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-shell__route {
+  color: var(--color-accent);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.mobile-shell__content {
+  min-width: 0;
+  min-height: 0;
+  padding: var(--layout-mobile-gutter);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.mobile-shell__slot {
+  min-height: 160px;
+  padding: var(--layout-mobile-gutter);
+  background: var(--color-surface-low);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+}
+
+.mobile-shell__slot-label {
+  margin: 0 0 8px;
+  color: var(--color-accent);
+}
+
+.mobile-shell__slot h2 {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.25;
+}
+
+.mobile-shell__unsaved {
+  display: flex;
+  padding: 8px var(--layout-mobile-gutter);
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--color-warning);
+  background: var(--color-surface-low);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.mobile-shell__unsaved p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.mobile-shell__unsaved button {
+  min-height: var(--layout-mobile-control-min-height);
+  padding: 8px 10px;
+  flex: 0 0 auto;
+  color: var(--color-text-primary);
+  background: var(--color-transparent);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+}
+
+.mobile-shell [data-state="pressed"] {
+  background: var(--color-surface-high);
+}
+
+.mobile-shell [data-state="focused"]:focus-visible,
+.mobile-shell [data-state="focused"] :focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.mobile-shell__unsaved button:hover {
+  border-color: var(--color-accent);
+}
+
+.mobile-shell__navigation {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  min-height: var(--layout-mobile-nav-height);
+  padding: 4px var(--layout-mobile-gutter) calc(4px + env(safe-area-inset-bottom));
+  gap: 4px;
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+}
+
+.mobile-shell__navigation-item {
+  display: grid;
+  min-width: 0;
+  min-height: var(--layout-mobile-control-min-height);
+  padding: 6px 4px;
+  align-content: center;
+  justify-items: center;
+  gap: 2px;
+  color: var(--color-text-secondary);
+  background: var(--color-transparent);
+  border: 1px solid var(--color-transparent);
+  border-radius: var(--radius-control);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.mobile-shell__navigation-item:hover,
+.mobile-shell__navigation-item--active {
+  color: var(--color-accent);
+  background: var(--color-surface-low);
+  border-color: var(--color-border);
+}
+
+@media (min-width: 520px) {
+  .mobile-shell__content {
+    width: min(100%, 520px);
+    margin: 0 auto;
+  }
+}

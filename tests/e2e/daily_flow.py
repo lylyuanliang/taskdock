@@ -32,6 +32,7 @@ TAURI_MOCK = r"""
   Object.defineProperty(navigator, "language", { configurable: true, get: () => "en-US" });
   const callbacks = new Map();
   const listeners = new Map();
+  const appListeners = new Map();
   const calls = [];
   const mutationKeys = new Set();
   let callbackId = 1;
@@ -134,6 +135,19 @@ TAURI_MOCK = r"""
     }
     if (command === "plugin:event|unlisten") {
       listeners.delete(args.eventId);
+      return null;
+    }
+    if (command === "plugin:app|registerListener" || command === "plugin:app|register_listener") {
+      const id = listenerId++;
+      appListeners.set(id, { event: args.event, handler: args.handler, id });
+      return id;
+    }
+    if (
+      command === "plugin:app|unregisterListener" ||
+      command === "plugin:app|unregister_listener" ||
+      command === "plugin:app|remove_listener"
+    ) {
+      appListeners.delete(args.eventId ?? args.id ?? args.channelId);
       return null;
     }
     if (command === "get_quick_panel_behavior") return "click";

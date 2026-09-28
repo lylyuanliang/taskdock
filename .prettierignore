@@ -3,7 +3,9 @@ dist
 src-tauri/target
 src-tauri/target-*/
 src-tauri/gen/schemas/
+src-tauri/gen/
 pnpm-lock.yaml
 *.tsbuildinfo
 vite.config.d.ts
 vite.config.js
+tests/e2e/artifacts/

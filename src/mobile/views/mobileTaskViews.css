@@ -1,0 +1,114 @@
+.mobile-today,
+.mobile-editor {
+  display: grid;
+  gap: var(--layout-mobile-section-gap);
+}
+.mobile-today__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: var(--layout-mobile-divider-width) solid var(--color-border);
+}
+.mobile-today__row {
+  display: flex;
+  min-height: var(--layout-mobile-control-min-height);
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: var(--layout-mobile-divider-width) solid var(--color-border);
+  align-items: flex-start;
+}
+.mobile-today__row input {
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+}
+.mobile-today__open {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  padding: 0;
+  text-align: left;
+  color: inherit;
+  background: none;
+  border: 0;
+}
+.mobile-today__title {
+  display: -webkit-box;
+  overflow: hidden;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.mobile-today__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--color-text-secondary);
+  font-family: "JetBrains Mono", Consolas, monospace;
+  font-size: 11px;
+}
+.mobile-today__priority {
+  color: var(--color-accent);
+}
+.mobile-today__note {
+  display: inline-flex;
+  align-items: center;
+}
+.mobile-today__completed > button,
+.mobile-today__create,
+.mobile-editor button {
+  min-height: var(--layout-mobile-control-min-height);
+  padding: 8px 12px;
+  color: inherit;
+  background: var(--color-surface-low);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+}
+.mobile-today__create {
+  color: var(--color-canvas);
+  background: var(--color-accent);
+}
+.mobile-editor label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+}
+.mobile-editor input,
+.mobile-editor textarea,
+.mobile-editor select {
+  min-height: var(--layout-mobile-control-min-height);
+  padding: 8px;
+  color: inherit;
+  background: var(--color-surface-low);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+}
+.mobile-editor textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+.mobile-editor__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.mobile-task-view__error {
+  color: var(--color-danger);
+}
+.mobile-task-view__status {
+  color: var(--color-text-secondary);
+}
+
+.mobile-today[data-state="longText"] .mobile-today__title {
+  -webkit-line-clamp: 3;
+}
+
+.mobile-today[data-state="disabled"],
+.mobile-editor[data-state="disabled"] {
+  opacity: 0.62;
+}
+
+.mobile-today[data-state="loading"] .mobile-today__create,
+.mobile-editor[data-state="loading"] .mobile-editor__actions {
+  pointer-events: none;
+}

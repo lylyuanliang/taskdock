@@ -1,0 +1,209 @@
+.mobile-sync {
+  display: grid;
+  gap: var(--layout-mobile-section-gap);
+  color: var(--color-text-primary);
+}
+.mobile-sync__header {
+  display: flex;
+  min-height: 52px;
+  padding-bottom: 12px;
+  align-items: flex-start;
+  gap: 9px;
+  border-bottom: var(--layout-mobile-divider-width) solid var(--color-border);
+}
+.mobile-sync__header p {
+  margin: 0 0 3px;
+  color: var(--color-accent);
+  font:
+    11px "JetBrains Mono",
+    Consolas,
+    monospace;
+  text-transform: uppercase;
+}
+.mobile-sync__header h1 {
+  margin: 0;
+  font-size: 21px;
+}
+.mobile-sync__header > span:last-child {
+  margin-left: auto;
+  color: var(--color-text-secondary);
+  font:
+    11px "JetBrains Mono",
+    Consolas,
+    monospace;
+}
+.mobile-sync__status-dot {
+  padding: 3px 0;
+}
+.mobile-sync__primary,
+.mobile-sync__secondary,
+.mobile-sync__actions button,
+.mobile-sync__back {
+  min-height: var(--layout-mobile-control-min-height);
+  padding: 8px 12px;
+  color: inherit;
+  background: var(--color-surface-low);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+}
+.mobile-sync__primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  color: var(--color-canvas);
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+.mobile-sync__section {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 12px 0;
+  border: 0;
+  border-top: var(--layout-mobile-divider-width) solid var(--color-border);
+}
+.mobile-sync__section legend {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  font-weight: 700;
+}
+.mobile-sync__section label {
+  display: grid;
+  gap: 5px;
+  font-size: 12px;
+}
+.mobile-sync__section input,
+.mobile-sync__section select {
+  min-height: 40px;
+  padding: 8px;
+  color: inherit;
+  background: var(--color-surface-low);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+}
+.mobile-sync__toggle {
+  display: flex !important;
+  min-height: 40px;
+  padding: 8px 0;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: space-between;
+}
+.mobile-sync__toggle input {
+  width: 20px;
+  min-height: 20px;
+  accent-color: var(--color-accent);
+}
+.mobile-sync__keystore {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+.mobile-sync__actions {
+  display: grid;
+  gap: 8px;
+}
+.mobile-sync__actions--footer {
+  padding-top: 4px;
+}
+.mobile-sync__save {
+  min-height: var(--layout-mobile-control-min-height);
+  padding: 8px 12px;
+  color: var(--color-canvas);
+  background: var(--color-accent);
+  border: 1px solid var(--color-accent);
+  border-radius: 4px;
+  font-weight: 700;
+}
+.mobile-sync__save:disabled,
+.mobile-sync__secondary:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+.mobile-sync__message {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+.mobile-sync__status {
+  margin: 0;
+  color: var(--color-text-secondary);
+}
+.mobile-sync__status--error,
+.mobile-sync__message[role="alert"] {
+  color: var(--color-danger);
+}
+
+.mobile-sync[data-state="offline"],
+.mobile-sync[data-state="syncError"] {
+  border-left: 2px solid var(--color-danger);
+  padding-left: var(--layout-mobile-gutter);
+}
+
+.mobile-sync[data-state="conflict"] {
+  border-left: 2px solid var(--color-warning);
+  padding-left: var(--layout-mobile-gutter);
+}
+
+.mobile-sync[data-state="disabled"] {
+  opacity: 0.62;
+}
+.mobile-sync__back {
+  display: inline-flex;
+  width: max-content;
+  align-items: center;
+  gap: 6px;
+}
+.mobile-conflicts__values {
+  display: grid;
+  gap: 10px;
+}
+.mobile-conflicts__values span {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+.mobile-conflicts__values pre {
+  min-height: 64px;
+  margin: 5px 0 0;
+  padding: 9px;
+  overflow: auto;
+  white-space: pre-wrap;
+  background: var(--color-surface-low);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  font:
+    12px "JetBrains Mono",
+    Consolas,
+    monospace;
+}
+.mobile-conflicts__actions {
+  display: grid;
+  gap: 8px;
+}
+.mobile-conflicts__actions button,
+.mobile-conflicts__pager button {
+  min-height: 40px;
+  color: inherit;
+  background: var(--color-surface-low);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+}
+.mobile-conflicts__pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--color-text-secondary);
+  font:
+    11px "JetBrains Mono",
+    Consolas,
+    monospace;
+}
+.mobile-conflicts__pager button {
+  padding: 6px 10px;
+}

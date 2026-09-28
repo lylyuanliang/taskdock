@@ -11,7 +11,7 @@ use uuid::Uuid;
 use crate::{
     domain::{ports::ProjectRepository, project::Project, project_service::ProjectService},
     error::AppError,
-    sync_worker::SyncWorker,
+    platform::lifecycle::SyncWorkerPort,
     AppState,
 };
 
@@ -92,7 +92,7 @@ pub(crate) fn archive_project(
     result
 }
 
-fn request_sync_after_mutation(worker: &SyncWorker, succeeded: bool) {
+fn request_sync_after_mutation(worker: &dyn SyncWorkerPort, succeeded: bool) {
     if succeeded {
         if let Err(error) = worker.request_sync() {
             eprintln!("sync background request failed: {error}");

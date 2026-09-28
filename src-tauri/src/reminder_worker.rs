@@ -1,24 +1,34 @@
+#[cfg(desktop)]
 use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
 
+#[cfg(desktop)]
 use chrono::{DateTime, Utc};
+#[cfg(desktop)]
 use tauri::async_runtime::JoinHandle;
+#[cfg(desktop)]
 use tokio::{
     sync::mpsc::{self, error::TrySendError},
     time::MissedTickBehavior,
 };
+#[cfg(desktop)]
 use tokio_util::sync::CancellationToken;
 
+#[cfg(mobile)]
+use crate::error::AppError;
+#[cfg(desktop)]
 use crate::{
     domain::{ports::TaskRepository, reminders::ReminderNotifier, reminders::ReminderScheduler},
     error::{AppError, AppErrorKind},
 };
 
 /// 正常运行时每 30 秒兜底扫描一次；任务变更会另行立即唤醒。
+#[cfg(desktop)]
 pub(crate) const REMINDER_POLL_INTERVAL: Duration = Duration::from_secs(30);
 
+#[cfg(desktop)]
 pub(crate) trait ReminderScan: Send + Sync + 'static {
     fn scan(&self, now: DateTime<Utc>) -> Result<(), AppError>;
 }
@@ -27,6 +37,7 @@ pub(crate) trait ReminderRescanRequester {
     fn request_rescan(&self) -> Result<(), AppError>;
 }
 
+#[cfg(desktop)]
 impl<R, N> ReminderScan for ReminderScheduler<R, N>
 where
     R: TaskRepository + Send + Sync + 'static,
@@ -37,12 +48,14 @@ where
     }
 }
 
+#[cfg(desktop)]
 pub(crate) struct ReminderWorker {
     rescan_sender: mpsc::Sender<()>,
     cancellation: CancellationToken,
     join_handle: Mutex<Option<JoinHandle<()>>>,
 }
 
+#[cfg(desktop)]
 impl ReminderWorker {
     pub(crate) fn start<S>(scanner: Arc<S>, poll_interval: Duration) -> Self
     where
@@ -100,18 +113,21 @@ impl ReminderWorker {
     }
 }
 
+#[cfg(desktop)]
 impl Drop for ReminderWorker {
     fn drop(&mut self) {
         self.stop();
     }
 }
 
+#[cfg(desktop)]
 impl ReminderRescanRequester for ReminderWorker {
     fn request_rescan(&self) -> Result<(), AppError> {
         ReminderWorker::request_rescan(self)
     }
 }
 
+#[cfg(desktop)]
 async fn run_worker<S>(
     scanner: Arc<S>,
     poll_interval: Duration,
@@ -144,6 +160,7 @@ async fn run_worker<S>(
     }
 }
 
+#[cfg(desktop)]
 fn run_scan<S>(scanner: &S)
 where
     S: ReminderScan,
@@ -153,6 +170,7 @@ where
     }
 }
 
+#[cfg(desktop)]
 fn worker_unavailable_error() -> AppError {
     AppError::new(
         "reminder.worker.unavailable",

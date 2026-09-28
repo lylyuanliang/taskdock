@@ -1,9 +1,25 @@
-import { useEffect, useEffectEvent, useReducer, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useReducer, useRef, useState, type ReactNode } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { FolderKanban, Search } from "lucide-react";
 import "../App.css";
-import { listProjects } from "../api/projects";
+import { createProject, listProjects } from "../api/projects";
 import { completeTask, listInbox, listTasks, updateTask } from "../api/tasks";
+import {
+  getSyncConfig,
+  getSyncStatus,
+  listSyncConflicts,
+  resolveSyncConflict,
+  saveSyncConfig,
+  syncNow,
+  testSyncConnection,
+  type SaveSyncConfigInput,
+  type SyncConfigDto,
+  type SyncConflictDecision,
+  type SyncConflictDto,
+  type SyncStateDto,
+  type SyncStrategy,
+  type TestSyncConnectionInput,
+} from "../api/sync";
 import MonthCalendar from "../features/calendar/MonthCalendar";
 import {
   calendarQueryReducer,
@@ -14,6 +30,15 @@ import ProjectList from "../features/projects/ProjectList";
 import ProjectTaskBoard from "../features/projects/ProjectTaskBoard";
 import SearchDialog from "../features/search/SearchDialog";
 import SettingsWorkspace from "../features/settings/SettingsWorkspace";
+import MobileAppShell from "../mobile/MobileAppShell";
+import { getMobileBackRoute, type MobileRoute } from "../mobile/mobileRoutes";
+import MobileConflictView from "../mobile/views/MobileConflictView";
+import MobileInboxView from "../mobile/views/MobileInboxView";
+import MobileProjectsView from "../mobile/views/MobileProjectsView";
+import MobileSyncSettingsView from "../mobile/views/MobileSyncSettingsView";
+import MobileTaskEditorView from "../mobile/views/MobileTaskEditorView";
+import MobileTodayView from "../mobile/views/MobileTodayView";
+import { isMobileTodayTask } from "../mobile/mobileTaskFilters";
 import { initialSearchQueryState, searchQueryReducer } from "../features/search/searchQueryState";
 import type { ProjectDto } from "../features/projects/projectTypes";
 import TaskEditor from "../features/tasks/TaskEditor";
@@ -80,6 +105,16 @@ interface ProjectTaskLoadRequest {
   requestId: number;
 }
 
+const emptyMobileSyncState: SyncStateDto = {
+  baselineSnapshotId: null,
+  conflicts: 0,
+  lastErrorCode: null,
+  lastSyncedAt: null,
+  pendingDownload: 0,
+  pendingUpload: 0,
+  status: "unconfigured",
+};
+
 interface InboxLoadRequest {
   promise: Promise<TaskDto[]>;
   requestId: number;
@@ -89,6 +124,13 @@ type InboxLoadState =
   | { requestId: number; status: "loading" }
   | { requestId: number; status: "ready"; tasks: TaskDto[] }
   | { errorMessageKey: string; requestId: number; status: "error" };
+
+interface MobileTodayState {
+  completedTasks: TaskDto[];
+  errorMessageKey: string | null;
+  isLoading: boolean;
+  tasks: TaskDto[];
+}
 
 function currentLocalMonth(): string {
   const now = new Date();
@@ -122,6 +164,30 @@ function toSummaryInsightItem(task: TaskSummaryDto): TaskInsightItem {
   };
 }
 
+function toMobileCompletedTask(task: TaskSummaryDto): TaskDto {
+  const completedAt = new Date().toISOString();
+
+  return {
+    completedAt: task.completed ? completedAt : null,
+    createdAt: completedAt,
+    dueAt: task.dueAt,
+    id: task.id,
+    note: "",
+    parentId: null,
+    priority: task.priority,
+    projectId: null,
+    recurrence: null,
+    revision: 0,
+    scheduledAt: task.scheduledAt,
+    title: task.title,
+    updatedAt: completedAt,
+  };
+}
+
+function isAndroidRuntime(): boolean {
+  return typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent);
+}
+
 function App() {
   const [editingTask, setEditingTask] = useState<TaskDto | null>(null);
   const [editorRefreshVersion, setEditorRefreshVersion] = useState(0);
@@ -146,6 +212,23 @@ function App() {
     useState<ProjectTaskLoadRequest | null>(null);
   const [calendarMonth, setCalendarMonth] = useState(currentLocalMonth);
   const [activeView, setActiveView] = useState<AppView>("inbox");
+  const [mobileRoute, setMobileRoute] = useState<MobileRoute>("today");
+  const [mobileHasUnsavedChanges, setMobileHasUnsavedChanges] = useState(false);
+  const [mobileSyncConfig, setMobileSyncConfig] = useState<SyncConfigDto | null>(null);
+  const [mobileSyncConflicts, setMobileSyncConflicts] = useState<SyncConflictDto[]>([]);
+  const [mobileSyncState, setMobileSyncState] = useState<SyncStateDto>(emptyMobileSyncState);
+  const [mobileSyncLoading, setMobileSyncLoading] = useState(false);
+  const [mobileSyncSaving, setMobileSyncSaving] = useState(false);
+  const [mobileOnline, setMobileOnline] = useState(() =>
+    typeof navigator === "undefined" ? true : navigator.onLine,
+  );
+  const [mobileTodayRefreshVersion, setMobileTodayRefreshVersion] = useState(0);
+  const [mobileTodayState, setMobileTodayState] = useState<MobileTodayState>({
+    completedTasks: [],
+    errorMessageKey: null,
+    isLoading: false,
+    tasks: [],
+  });
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [calendarQueryState, dispatchCalendarQuery] = useReducer(
     calendarQueryReducer,
@@ -172,6 +255,25 @@ function App() {
   const summaryRequestIdRef = useRef(0);
   const searchRequestIdRef = useRef(0);
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? null;
+  const mobilePreviousRouteRef = useRef<MobileRoute>("today");
+
+  useEffect(() => {
+    if (!isAndroidRuntime()) {
+      return;
+    }
+
+    function handleOnlineStateChange() {
+      setMobileOnline(navigator.onLine);
+    }
+
+    window.addEventListener("online", handleOnlineStateChange);
+    window.addEventListener("offline", handleOnlineStateChange);
+
+    return () => {
+      window.removeEventListener("online", handleOnlineStateChange);
+      window.removeEventListener("offline", handleOnlineStateChange);
+    };
+  }, []);
 
   useEffect(() => {
     if (activeView !== "inbox" || inboxLoadState.status !== "loading") {
@@ -365,6 +467,132 @@ function App() {
       document.removeEventListener("keydown", handleGlobalSearchShortcut);
     };
   }, []);
+
+  useEffect(() => {
+    if (!isAndroidRuntime() || (mobileRoute !== "syncSettings" && mobileRoute !== "conflicts")) {
+      return;
+    }
+
+    let active = true;
+    void Promise.all([getSyncConfig(), getSyncStatus(), listSyncConflicts()])
+      .then(([config, syncState, conflicts]) => {
+        if (!active) {
+          return;
+        }
+
+        setMobileSyncConfig(config);
+        setMobileSyncState(syncState);
+        setMobileSyncConflicts(conflicts);
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          setMobileSyncState((current) => ({ ...current, status: "retryPending" }));
+          console.error("Unable to load mobile sync state", error);
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setMobileSyncLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [mobileRoute]);
+
+  useEffect(() => {
+    if (!isAndroidRuntime() || mobileRoute !== "today") {
+      return;
+    }
+
+    let active = true;
+    const loadingRequestId = window.setTimeout(() => {
+      if (active) {
+        setMobileTodayState((current) => ({ ...current, isLoading: true }));
+      }
+    }, 0);
+    let updateRequestId: number | null = null;
+
+    if (inboxLoadState.status === "ready") {
+      const tasks = inboxLoadState.tasks.filter(
+        (task) => task.parentId === null && isMobileTodayTask(task),
+      );
+      updateRequestId = window.setTimeout(() => {
+        if (active) {
+          setMobileTodayState((current) => ({
+            ...current,
+            errorMessageKey: null,
+            isLoading: false,
+            tasks,
+          }));
+        }
+      }, 0);
+    } else if (inboxLoadState.status === "error") {
+      updateRequestId = window.setTimeout(() => {
+        if (active) {
+          setMobileTodayState({
+            completedTasks: [],
+            errorMessageKey: inboxLoadState.errorMessageKey,
+            isLoading: false,
+            tasks: [],
+          });
+        }
+      }, 0);
+    }
+
+    void listTasks({ kind: "quickPanelToday" })
+      .then((summaries) => {
+        if (active) {
+          setMobileTodayState((current) => ({
+            ...current,
+            completedTasks: summaries
+              .filter((summary) => summary.completed)
+              .map(toMobileCompletedTask),
+          }));
+        }
+      })
+      .catch(() => {
+        // Open tasks remain usable if the completed-today summary is unavailable.
+      });
+
+    return () => {
+      active = false;
+      window.clearTimeout(loadingRequestId);
+      if (updateRequestId !== null) {
+        window.clearTimeout(updateRequestId);
+      }
+    };
+  }, [inboxLoadState, mobileRoute, mobileTodayRefreshVersion]);
+
+  useEffect(() => {
+    if (!isAndroidRuntime() || mobileRoute !== "projects") return;
+    let active = true;
+    setIsProjectListLoading(true);
+    void listProjects()
+      .then((activeProjects) => {
+        if (!active) return [];
+        setProjects(activeProjects);
+        const projectId = selectedProjectIdRef.current ?? activeProjects[0]?.id ?? null;
+        selectedProjectIdRef.current = projectId;
+        setSelectedProjectId(projectId);
+        if (!projectId) return [];
+        setProjectTaskState((current) => ({ ...current, isLoading: true }));
+        return listTasks({ kind: "project", projectId });
+      })
+      .then((tasks) => {
+        if (active) setProjectTaskState({ errorMessageKey: null, isLoading: false, tasks });
+      })
+      .catch((error: unknown) => {
+        if (active) setProjectListErrorMessageKey(getCommandErrorMessageKey(error));
+      })
+      .finally(() => {
+        if (active) setIsProjectListLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [mobileRoute]);
 
   useEffect(() => {
     if (
@@ -579,6 +807,117 @@ function App() {
     setIsEditorOpen(true);
   }
 
+  function handleMobileRouteChange(route: MobileRoute) {
+    setMobileHasUnsavedChanges(false);
+    setMobileRoute((currentRoute) => {
+      if (route === "taskEditor" && currentRoute !== "taskEditor") {
+        mobilePreviousRouteRef.current = currentRoute;
+      }
+
+      return route;
+    });
+  }
+
+  function handleMobileBack() {
+    setMobileHasUnsavedChanges(false);
+    setMobileRoute((currentRoute) =>
+      getMobileBackRoute(currentRoute, mobilePreviousRouteRef.current),
+    );
+  }
+
+  function handleMobileEditorSaved() {
+    setMobileHasUnsavedChanges(false);
+    handleMobileBack();
+    setMobileTodayRefreshVersion((current) => current + 1);
+  }
+
+  function handleMobileEditorCancelled() {
+    setMobileHasUnsavedChanges(false);
+    handleMobileBack();
+  }
+
+  function handleMobileProjectSelect(projectId: string) {
+    selectedProjectIdRef.current = projectId;
+    setSelectedProjectId(projectId);
+    setProjectTaskState((current) => ({ ...current, isLoading: true }));
+    void listTasks({ kind: "project", projectId })
+      .then((tasks) => setProjectTaskState({ errorMessageKey: null, isLoading: false, tasks }))
+      .catch((error: unknown) =>
+        setProjectTaskState({
+          errorMessageKey: getCommandErrorMessageKey(error),
+          isLoading: false,
+          tasks: [],
+        }),
+      );
+  }
+
+  async function handleMobileCreateProject(name: string): Promise<ProjectDto> {
+    const project = await createProject(name);
+    setProjects((current) =>
+      current.some((item) => item.id === project.id) ? current : [...current, project],
+    );
+    return project;
+  }
+
+  async function handleMobileToggleCompleted(task: TaskDto): Promise<void> {
+    if (pendingTaskIdsRef.current.has(task.id)) {
+      return;
+    }
+
+    updatePendingTask(task.id, true);
+    try {
+      if (task.completedAt === null) {
+        await completeTask(task.id);
+      } else {
+        await updateTask(task.id, { completedAt: null });
+      }
+      setMobileTodayRefreshVersion((current) => current + 1);
+    } catch (error: unknown) {
+      setMobileTodayState((current) => ({
+        ...current,
+        errorMessageKey: getCommandErrorMessageKey(error),
+      }));
+    } finally {
+      updatePendingTask(task.id, false);
+    }
+  }
+
+  async function handleMobileSaveSync(input: SaveSyncConfigInput): Promise<void> {
+    setMobileSyncSaving(true);
+    try {
+      const saved = await saveSyncConfig(input);
+      setMobileSyncConfig(saved);
+      setMobileSyncState((current) => ({
+        ...current,
+        status: saved.paused ? "paused" : current.status,
+      }));
+    } finally {
+      setMobileSyncSaving(false);
+    }
+  }
+
+  async function handleMobileSyncNow(strategy?: SyncStrategy): Promise<void> {
+    const result = await syncNow(strategy);
+    setMobileSyncState((current) => ({ ...current, ...result }));
+    setMobileSyncConflicts(await listSyncConflicts());
+  }
+
+  async function handleMobileResolveConflict(
+    conflict: SyncConflictDto,
+    decision: SyncConflictDecision,
+  ): Promise<void> {
+    await resolveSyncConflict(conflict.entityId, conflict.entityKind, conflict.fieldName, decision);
+    setMobileSyncConflicts((current) =>
+      current.filter(
+        (item) => item.entityId !== conflict.entityId || item.fieldName !== conflict.fieldName,
+      ),
+    );
+    setMobileSyncState((current) => ({
+      ...current,
+      conflicts: Math.max(0, current.conflicts - 1),
+    }));
+  }
+
   function handleEditTask(task: TaskDto) {
     setEditingTask(task);
     setIsEditorOpen(true);
@@ -712,6 +1051,103 @@ function App() {
       : summaryLoadState?.status === "error"
         ? "error"
         : "ready";
+
+  const mobileContent: ReactNode =
+    mobileRoute === "taskEditor" ? (
+      <MobileTaskEditorView
+        key={editingTask?.id ?? "new-mobile-task"}
+        mode={editingTask ? "edit" : "create"}
+        onCancelled={handleMobileEditorCancelled}
+        onDirtyChange={setMobileHasUnsavedChanges}
+        onSaved={handleMobileEditorSaved}
+        taskId={editingTask?.id ?? null}
+      />
+    ) : mobileRoute === "syncSettings" ? (
+      <MobileSyncSettingsView
+        config={mobileSyncConfig}
+        isLoading={mobileSyncLoading}
+        isOnline={mobileOnline}
+        isSaving={mobileSyncSaving}
+        onReviewConflicts={() => setMobileRoute("conflicts")}
+        onSave={handleMobileSaveSync}
+        onSyncNow={handleMobileSyncNow}
+        onTestConnection={(input: TestSyncConnectionInput) => testSyncConnection(input)}
+        state={mobileSyncState}
+      />
+    ) : mobileRoute === "conflicts" ? (
+      <MobileConflictView
+        conflicts={mobileSyncConflicts}
+        onBack={handleMobileBack}
+        onResolve={handleMobileResolveConflict}
+      />
+    ) : mobileRoute === "projects" ? (
+      <MobileProjectsView
+        errorMessageKey={projectListErrorMessageKey ?? projectTaskState.errorMessageKey}
+        isLoading={isProjectListLoading || projectTaskState.isLoading}
+        onCreateProject={handleMobileCreateProject}
+        onSelectProject={handleMobileProjectSelect}
+        projects={projects}
+        selectedProjectId={selectedProjectId}
+        tasks={projectTaskState.tasks}
+      />
+    ) : mobileRoute === "inbox" ? (
+      <MobileInboxView
+        errorMessageKey={inboxLoadState.status === "error" ? inboxLoadState.errorMessageKey : null}
+        isLoading={inboxLoadState.status === "loading"}
+        onCreateTask={() => {
+          setEditingTask(null);
+          setMobileRoute("taskEditor");
+        }}
+        onOpenTask={(task) => {
+          setEditingTask(task);
+          setMobileRoute("taskEditor");
+        }}
+        onToggleCompleted={(task) => void handleMobileToggleCompleted(task)}
+        tasks={inboxTasks}
+      />
+    ) : mobileRoute === "settings" ? (
+      <section className="mobile-shell__slot" data-state="default">
+        <p className="mobile-shell__slot-label">{t("settings.title")}</p>
+        <h2>{t("settings.title")}</h2>
+        <button
+          className="mobile-shell__settings-link"
+          onClick={() => setMobileRoute("syncSettings")}
+          type="button"
+        >
+          {t("settings.sync")}
+        </button>
+      </section>
+    ) : (
+      <MobileTodayView
+        completedTasks={mobileTodayState.completedTasks}
+        errorMessageKey={mobileTodayState.errorMessageKey}
+        isLoading={mobileTodayState.isLoading}
+        onCreateTask={() => {
+          setEditingTask(null);
+          setMobileRoute("taskEditor");
+        }}
+        onOpenTask={(task) => {
+          setEditingTask(task);
+          setMobileRoute("taskEditor");
+        }}
+        onToggleCompleted={(task) => void handleMobileToggleCompleted(task)}
+        tasks={mobileTodayState.tasks}
+      />
+    );
+
+  if (isAndroidRuntime()) {
+    return (
+      <MobileAppShell
+        activeRoute={mobileRoute}
+        hasUnsavedChanges={mobileHasUnsavedChanges}
+        onBack={handleMobileBack}
+        onRouteChange={handleMobileRouteChange}
+        previousRoute={mobilePreviousRouteRef.current}
+      >
+        {mobileContent}
+      </MobileAppShell>
+    );
+  }
 
   if (isSettingsOpen) {
     return (

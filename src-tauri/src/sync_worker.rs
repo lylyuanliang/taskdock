@@ -1,3 +1,5 @@
+#![cfg(desktop)]
+
 use std::{
     future::Future,
     pin::Pin,
