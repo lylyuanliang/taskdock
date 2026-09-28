@@ -5,7 +5,6 @@ import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { t, type TranslationKey } from "../i18n";
 import {
-  getMobileBackRoute,
   mobilePrimaryRoutes,
   transitionMobileRoute,
   type MobilePrimaryRoute,
@@ -49,6 +48,18 @@ function getRouteTitle(route: MobileRoute): string {
       return t("settings.sync");
     case "conflicts":
       return t("settings.conflicts");
+  }
+}
+
+function getRouteSubtitle(route: MobileRoute): string {
+  switch (route) {
+    case "syncSettings":
+    case "conflicts":
+      return "config // sync_provider: webdav";
+    case "taskEditor":
+      return "editor // local_task";
+    default:
+      return "workspace // local";
   }
 }
 
@@ -164,7 +175,6 @@ export default function MobileAppShell({
   }
 
   const isPrimaryRoute = mobilePrimaryRoutes.includes(activeRoute as MobilePrimaryRoute);
-  const backRoute = getMobileBackRoute(activeRoute, previousRoute ?? internalPreviousRoute);
 
   return (
     <div className="mobile-shell" data-state="default" data-testid="mobile-app-shell">
@@ -181,16 +191,15 @@ export default function MobileAppShell({
           </button>
         ) : null}
         <div className="mobile-shell__heading">
-          <span className="mobile-shell__eyebrow">{t("app.title")}</span>
-          <h1>{getRouteTitle(activeRoute)}</h1>
+          <div className="mobile-shell__title-row">
+            <h1>{getRouteTitle(activeRoute)}</h1>
+            {activeRoute === "syncSettings" || activeRoute === "conflicts" ? (
+              <span className="mobile-shell__badge">[WEBDAV]</span>
+            ) : null}
+          </div>
+          <p className="mobile-shell__subtitle">{getRouteSubtitle(activeRoute)}</p>
         </div>
-        <span className="mobile-shell__route" data-route={activeRoute}>
-          {activeRoute === "syncSettings"
-            ? t("mobile.route.webdav")
-            : backRoute === "syncSettings"
-              ? t("mobile.route.sync")
-              : t("mobile.route.local")}
-        </span>
+        <span className="mobile-shell__eyebrow">{t("app.title")}</span>
       </header>
 
       {blockedAction !== null ? (

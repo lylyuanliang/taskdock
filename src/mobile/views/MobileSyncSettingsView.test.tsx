@@ -150,6 +150,16 @@ it("keeps the save action at the end of the scrollable form", () => {
   );
 });
 
+it("renders the Stitch ledger sections instead of a flat form", () => {
+  renderView();
+
+  expect(screen.getByTestId("mobile-sync-status-card")).toBeInTheDocument();
+  expect(screen.getByTestId("mobile-sync-endpoint-card")).toBeInTheDocument();
+  expect(screen.getByTestId("mobile-sync-strategy-card")).toBeInTheDocument();
+  expect(screen.getByTestId("mobile-sync-security-card")).toBeInTheDocument();
+  expect(screen.getByText(/manual sync only|仅手动同步/i)).toBeInTheDocument();
+});
+
 it.each([
   ["errors.sync.configuration.missing", /complete the sync configuration|填写完整的同步配置/i],
   ["errors.sync.remote.path_not_found", /sync network|同步网络/i],

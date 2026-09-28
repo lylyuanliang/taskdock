@@ -71,6 +71,20 @@ it("delegates the page back action and responds to the system back event", () =>
   expect(onBack).toHaveBeenCalledTimes(2);
 });
 
+it("shows the technical sync marker on nested sync routes", () => {
+  render(
+    <MobileAppShell
+      activeRoute="syncSettings"
+      hasUnsavedChanges={false}
+      onBack={vi.fn()}
+      onRouteChange={vi.fn()}
+    />,
+  );
+
+  expect(screen.getByText("[WEBDAV]")).toBeInTheDocument();
+  expect(screen.getByText("config // sync_provider: webdav")).toBeInTheDocument();
+});
+
 it("blocks navigation while an editor has unsaved changes until discarded", () => {
   const onRouteChange = vi.fn();
   const onBack = vi.fn();

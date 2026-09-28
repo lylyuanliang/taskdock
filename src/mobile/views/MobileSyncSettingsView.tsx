@@ -1,4 +1,13 @@
-import { Cloud, LockKeyhole, RefreshCw, ShieldCheck } from "lucide-react";
+import {
+  Check,
+  ChevronRight,
+  Cloud,
+  KeyRound,
+  LockKeyhole,
+  Radio,
+  RefreshCw,
+  ShieldCheck,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type {
   SaveSyncConfigInput,
@@ -68,6 +77,16 @@ function safeError(error: unknown): string {
   const stable = stableByBackendKey[key] ?? (key.startsWith("sync.") ? key : "errors.unknown");
   if (isTranslationKey(stable)) return t(stable);
   return t("errors.unknown");
+}
+
+function formatSyncAge(lastSyncedAt: string | null): string {
+  if (!lastSyncedAt) return t("settings.sync.notSynced");
+
+  const timestamp = new Date(lastSyncedAt).getTime();
+  if (Number.isNaN(timestamp)) return t("settings.sync.notSynced");
+
+  const minutes = Math.max(0, Math.round((Date.now() - timestamp) / 60_000));
+  return `${minutes} min ago`;
 }
 
 export default function MobileSyncSettingsView({
@@ -187,12 +206,14 @@ export default function MobileSyncSettingsView({
     }
   }
 
-  if (isLoading)
+  if (isLoading) {
     return (
       <p className="mobile-sync__status" data-state={stateValue} role="status">
         {t("tasks.loading")}
       </p>
     );
+  }
+
   if (!isOnline) {
     return (
       <p
@@ -205,150 +226,255 @@ export default function MobileSyncSettingsView({
     );
   }
 
+  const statusTitle =
+    state.status === "synced" ? t("settings.sync.readyToSync") : t(statusKeys[state.status]);
+  const statusDescription =
+    state.status === "synced"
+      ? t("settings.sync.localChangesUpToDate")
+      : t("settings.sync.description");
+
   return (
     <section className="mobile-sync" aria-labelledby="mobile-sync-title" data-state={stateValue}>
-      <header className="mobile-sync__header">
-        <Cloud aria-hidden="true" size={18} />
-        <div>
-          <p>{t("settings.sync.eyebrow")}</p>
-          <h1 id="mobile-sync-title">{t("settings.sync.title")}</h1>
-        </div>
-        <span className="mobile-sync__status-dot" role="status">
-          {t(statusKeys[state.status])}
-        </span>
-      </header>
-      <button
-        className="mobile-sync__primary"
-        disabled={isSyncing}
-        onClick={() => void syncNow()}
-        type="button"
+      <h1 className="mobile-sync__visually-hidden" id="mobile-sync-title">
+        {t("settings.sync.title")}
+      </h1>
+      <section
+        className="mobile-sync__card mobile-sync__status-card"
+        data-testid="mobile-sync-status-card"
+        role="status"
       >
-        <RefreshCw aria-hidden="true" size={16} />
-        {t("settings.syncNow")}
-      </button>
-      {state.conflicts > 0 ? (
-        <div className="mobile-sync__actions">
-          <button
-            aria-label="Review conflicts"
-            className="mobile-sync__secondary"
-            onClick={onReviewConflicts}
-            type="button"
-          >
-            {t("settings.conflicts")} ({state.conflicts})
-          </button>
+        <span className="mobile-sync__visually-hidden">{t(statusKeys[state.status])}</span>
+        <div className="mobile-sync__status-top">
+          <div className="mobile-sync__status-leading">
+            <span className="mobile-sync__status-icon" aria-hidden="true">
+              {state.status === "synced" ? <Check size={16} /> : <Cloud size={16} />}
+            </span>
+            <div>
+              <strong>
+                {statusTitle}
+                {state.status === "synced" ? <span className="mobile-sync__status-pulse" /> : null}
+              </strong>
+              <p>{statusDescription}</p>
+            </div>
+          </div>
+          <span className="mobile-sync__status-age">{formatSyncAge(state.lastSyncedAt)}</span>
         </div>
-      ) : null}
-      <fieldset className="mobile-sync__section">
-        <legend>{t("settings.sync.connection")}</legend>
-        <label>
-          <span>{t("settings.sync.endpoint")}</span>
-          <input
-            aria-label={t("settings.sync.endpoint")}
-            onChange={(event) => setField("endpoint", event.target.value)}
-            type="url"
-            value={form.endpoint}
-          />
-        </label>
-        <label>
-          <span>{t("settings.sync.directory")}</span>
-          <input
-            aria-label={t("settings.sync.directory")}
-            onChange={(event) => setField("remoteDirectory", event.target.value)}
-            value={form.remoteDirectory}
-          />
-        </label>
-        <label>
-          <span>{t("settings.sync.username")}</span>
-          <input
-            aria-label={t("settings.sync.username")}
-            onChange={(event) => setField("username", event.target.value)}
-            value={form.username}
-          />
-        </label>
-        <label>
-          <span>{t("settings.sync.password")}</span>
-          <input
-            aria-label={t("settings.sync.password")}
-            onChange={(event) => setField("webdavPassword", event.target.value)}
-            type="password"
-            value={form.webdavPassword}
-          />
-        </label>
+        <div className="mobile-sync__ledger">
+          <span>
+            <b>{t("settings.sync.buffer")}:</b> {t("settings.sync.clean")}
+          </span>
+          <span>
+            {state.pendingUpload + state.pendingDownload} {t("settings.sync.pendingTransactions")}
+          </span>
+          <span className="mobile-sync__ledger-ok">{t("settings.sync.httpOk")}</span>
+        </div>
+      </section>
+      <div className="mobile-sync__primary-wrap">
         <button
-          className="mobile-sync__secondary"
-          disabled={isTestingConnection}
-          aria-busy={isTestingConnection}
-          onClick={() => void testConnection()}
+          className="mobile-sync__primary"
+          disabled={isSyncing}
+          onClick={() => void syncNow()}
           type="button"
         >
-          {isTestingConnection
-            ? t("settings.sync.connectionTesting")
-            : t("settings.sync.testConnection")}
+          <RefreshCw aria-hidden="true" size={16} />
+          {t("settings.syncNow")}
         </button>
-      </fieldset>
-      <fieldset className="mobile-sync__section">
-        <legend>{t("settings.sync.strategy")}</legend>
-        <select
-          aria-label={t("settings.sync.strategy")}
-          onChange={(event) => setField("strategy", event.target.value as SyncStrategy)}
-          value={form.strategy}
+        <p>{t("settings.sync.manualOnly")}</p>
+      </div>
+      {state.conflicts > 0 ? (
+        <button
+          aria-label={t("settings.reviewConflicts")}
+          className="mobile-sync__conflict-card"
+          onClick={onReviewConflicts}
+          type="button"
         >
-          <option value="smartMerge">{t("settings.sync.smartMerge")}</option>
-          <option value="keepLocal">{t("settings.sync.keepLocal")}</option>
-          <option value="keepRemote">{t("settings.sync.keepRemote")}</option>
-        </select>
-        <label>
-          <span>{t("settings.sync.frequency")}</span>
+          <span className="mobile-sync__conflict-count">{state.conflicts}</span>
+          <span className="mobile-sync__conflict-copy">
+            <strong>{t("settings.conflicts")}</strong>
+            <small>{t("sync.conflict.pending")}</small>
+          </span>
+          <ChevronRight aria-hidden="true" size={18} />
+        </button>
+      ) : null}
+      <section className="mobile-sync__section-block">
+        <div className="mobile-sync__section-heading">
+          <h2>{t("settings.sync.endpointLabel")}</h2>
+          <span>{t("settings.sync.tls")}</span>
+        </div>
+        <div
+          className="mobile-sync__card mobile-sync__endpoint-card"
+          data-testid="mobile-sync-endpoint-card"
+        >
+          <label className="mobile-sync__field">
+            <span>{t("settings.sync.endpoint")}</span>
+            <input
+              aria-label={t("settings.sync.endpoint")}
+              onChange={(event) => setField("endpoint", event.target.value)}
+              type="url"
+              value={form.endpoint}
+            />
+          </label>
+          <label className="mobile-sync__field">
+            <span>{t("settings.sync.directory")}</span>
+            <input
+              aria-label={t("settings.sync.directory")}
+              onChange={(event) => setField("remoteDirectory", event.target.value)}
+              value={form.remoteDirectory}
+            />
+          </label>
+          <label className="mobile-sync__field">
+            <span>{t("settings.sync.username")}</span>
+            <input
+              aria-label={t("settings.sync.username")}
+              onChange={(event) => setField("username", event.target.value)}
+              value={form.username}
+            />
+          </label>
+          <label className="mobile-sync__field">
+            <span>
+              {t("settings.sync.password")}
+              <small>{t("settings.sync.keystoreSecured")}</small>
+            </span>
+            <input
+              aria-label={t("settings.sync.password")}
+              onChange={(event) => setField("webdavPassword", event.target.value)}
+              type="password"
+              value={form.webdavPassword}
+            />
+          </label>
+          <div className="mobile-sync__test-footer">
+            <button
+              aria-busy={isTestingConnection}
+              className="mobile-sync__test-button"
+              disabled={isTestingConnection}
+              onClick={() => void testConnection()}
+              type="button"
+            >
+              <Radio aria-hidden="true" size={14} />
+              {isTestingConnection
+                ? t("settings.sync.connectionTesting")
+                : t("settings.sync.testConnection")}
+            </button>
+            <span>
+              {isTestingConnection
+                ? t("settings.sync.connectionTesting")
+                : t("settings.sync.pingStatus")}
+            </span>
+          </div>
+        </div>
+      </section>
+      <section className="mobile-sync__section-block">
+        <div className="mobile-sync__section-heading">
+          <h2>{t("settings.sync.strategyLabel")}</h2>
+        </div>
+        <div
+          className="mobile-sync__card mobile-sync__strategy-card"
+          data-testid="mobile-sync-strategy-card"
+        >
+          <div className="mobile-sync__segmented" role="group">
+            <button
+              className={form.strategy === "smartMerge" ? "is-selected" : ""}
+              onClick={() => setField("strategy", "smartMerge")}
+              type="button"
+            >
+              {t("settings.sync.smartMerge")}
+            </button>
+            <button
+              className={form.strategy === "keepLocal" ? "is-selected" : ""}
+              onClick={() => setField("strategy", "keepLocal")}
+              type="button"
+            >
+              {t("settings.sync.keepLocal")}
+            </button>
+            <button
+              className={form.strategy === "keepRemote" ? "is-selected" : ""}
+              onClick={() => setField("strategy", "keepRemote")}
+              type="button"
+            >
+              {t("settings.sync.keepRemote")}
+            </button>
+          </div>
           <select
-            aria-label={t("settings.sync.frequency")}
-            onChange={(event) => setField("frequency", event.target.value as SyncFrequency)}
-            value={form.frequency}
+            aria-label={t("settings.sync.strategy")}
+            className="mobile-sync__visually-hidden-select"
+            onChange={(event) => setField("strategy", event.target.value as SyncStrategy)}
+            value={form.strategy}
           >
-            <option value="oneMinute">{t("settings.sync.oneMinute")}</option>
-            <option value="fiveMinutes">{t("settings.sync.fiveMinutes")}</option>
-            <option value="fifteenMinutes">{t("settings.sync.fifteenMinutes")}</option>
-            <option value="thirtyMinutes">{t("settings.sync.thirtyMinutes")}</option>
-            <option value="oneHour">{t("settings.sync.oneHour")}</option>
-            <option value="manual">{t("settings.sync.manual")}</option>
+            <option value="smartMerge">{t("settings.sync.smartMerge")}</option>
+            <option value="keepLocal">{t("settings.sync.keepLocal")}</option>
+            <option value="keepRemote">{t("settings.sync.keepRemote")}</option>
           </select>
-        </label>
-        <label className="mobile-sync__toggle">
-          <span>{t("settings.sync.pauseAutomatic")}</span>
-          <input
-            aria-label={t("settings.sync.pauseAutomatic")}
-            checked={form.paused}
-            onChange={(event) => setField("paused", event.target.checked)}
-            type="checkbox"
-          />
-        </label>
-      </fieldset>
-      <fieldset className="mobile-sync__section">
-        <legend>
-          <LockKeyhole aria-hidden="true" size={15} /> {t("settings.sync.encryption")}
-        </legend>
-        <label className="mobile-sync__toggle">
-          <span>{t("settings.sync.encryptionEnabled")}</span>
-          <input
-            checked={form.encryptionEnabled}
-            onChange={(event) => setField("encryptionEnabled", event.target.checked)}
-            type="checkbox"
-          />
-        </label>
-        <label>
-          <span>{t("settings.sync.encryptionPassphrase")}</span>
-          <input
-            aria-label={t("settings.sync.encryptionPassphrase")}
-            disabled={!form.encryptionEnabled}
-            onChange={(event) => setField("encryptionPassphrase", event.target.value)}
-            type="password"
-            value={form.encryptionPassphrase}
-          />
-        </label>
-        <p className="mobile-sync__keystore">
-          <ShieldCheck aria-hidden="true" size={15} />
-          {t("settings.sync.androidKeystore")}
-        </p>
-      </fieldset>
+          <label className="mobile-sync__field mobile-sync__frequency">
+            <span>{t("settings.sync.frequency")}</span>
+            <select
+              aria-label={t("settings.sync.frequency")}
+              onChange={(event) => setField("frequency", event.target.value as SyncFrequency)}
+              value={form.frequency}
+            >
+              <option value="oneMinute">{t("settings.sync.oneMinute")}</option>
+              <option value="fiveMinutes">{t("settings.sync.fiveMinutes")}</option>
+              <option value="fifteenMinutes">{t("settings.sync.fifteenMinutes")}</option>
+              <option value="thirtyMinutes">{t("settings.sync.thirtyMinutes")}</option>
+              <option value="oneHour">{t("settings.sync.oneHour")}</option>
+              <option value="manual">{t("settings.sync.manual")}</option>
+            </select>
+          </label>
+          <label className="mobile-sync__toggle">
+            <span>{t("settings.sync.pauseAutomatic")}</span>
+            <input
+              aria-label={t("settings.sync.pauseAutomatic")}
+              checked={form.paused}
+              onChange={(event) => setField("paused", event.target.checked)}
+              type="checkbox"
+            />
+          </label>
+          <p className="mobile-sync__hint">{t("settings.sync.strategyHint")}</p>
+        </div>
+      </section>
+      <section className="mobile-sync__section-block">
+        <div className="mobile-sync__section-heading">
+          <h2>{t("settings.sync.securityLabel")}</h2>
+        </div>
+        <div
+          className="mobile-sync__card mobile-sync__security-card"
+          data-testid="mobile-sync-security-card"
+        >
+          <label className="mobile-sync__toggle mobile-sync__encryption-row">
+            <span>
+              <strong>{t("settings.sync.encryptionEnabled")}</strong>
+              <small>{t("settings.sync.encryptedStorage")}</small>
+            </span>
+            <input
+              aria-label={t("settings.sync.encryptionEnabled")}
+              checked={form.encryptionEnabled}
+              onChange={(event) => setField("encryptionEnabled", event.target.checked)}
+              type="checkbox"
+            />
+          </label>
+          <label className="mobile-sync__field">
+            <span>{t("settings.sync.encryptionPassphrase")}</span>
+            <input
+              aria-label={t("settings.sync.encryptionPassphrase")}
+              disabled={!form.encryptionEnabled}
+              onChange={(event) => setField("encryptionPassphrase", event.target.value)}
+              type="password"
+              value={form.encryptionPassphrase}
+            />
+          </label>
+          <div className="mobile-sync__key-row">
+            <KeyRound aria-hidden="true" size={16} />
+            <span>{t("settings.sync.manageKey")}</span>
+            <ShieldCheck aria-hidden="true" size={16} />
+          </div>
+          <p className="mobile-sync__keystore">
+            <LockKeyhole aria-hidden="true" size={15} />
+            {t("settings.sync.androidKeystore")}
+          </p>
+        </div>
+      </section>
+      <div className="mobile-sync__footer-note">
+        <span>{t("settings.sync.footer")}</span>
+      </div>
       <div className="mobile-sync__actions mobile-sync__actions--footer">
         <button
           className="mobile-sync__save"
