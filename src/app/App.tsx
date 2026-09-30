@@ -1,10 +1,11 @@
 import { useEffect, useEffectEvent, useReducer, useRef, useState, type ReactNode } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { FolderKanban, Search } from "lucide-react";
+import { ChevronRight, Cloud, FolderKanban, Search } from "lucide-react";
 import "../App.css";
 import { createProject, listProjects } from "../api/projects";
 import { completeTask, listInbox, listTasks, updateTask } from "../api/tasks";
 import {
+  getSavedWebdavPassword,
   getSyncConfig,
   getSyncStatus,
   listSyncConflicts,
@@ -1070,6 +1071,7 @@ function App() {
         isSaving={mobileSyncSaving}
         onReviewConflicts={() => setMobileRoute("conflicts")}
         onSave={handleMobileSaveSync}
+        onRevealPassword={getSavedWebdavPassword}
         onSyncNow={handleMobileSyncNow}
         onTestConnection={(input: TestSyncConnectionInput) => testSyncConnection(input)}
         state={mobileSyncState}
@@ -1106,15 +1108,26 @@ function App() {
         tasks={inboxTasks}
       />
     ) : mobileRoute === "settings" ? (
-      <section className="mobile-shell__slot" data-state="default">
-        <p className="mobile-shell__slot-label">{t("settings.title")}</p>
-        <h2>{t("settings.title")}</h2>
+      <section
+        aria-labelledby="mobile-settings-title"
+        className="mobile-settings"
+        data-state="default"
+      >
+        <p className="mobile-settings__eyebrow">WORKSPACE // CONFIGURATION</p>
+        <h2 id="mobile-settings-title">{t("settings.title")}</h2>
         <button
-          className="mobile-shell__settings-link"
+          className="mobile-settings__link"
           onClick={() => setMobileRoute("syncSettings")}
           type="button"
         >
-          {t("settings.sync")}
+          <span className="mobile-settings__link-icon" aria-hidden="true">
+            <Cloud size={18} />
+          </span>
+          <span className="mobile-settings__link-copy">
+            <strong>{t("settings.sync")}</strong>
+            <small>{t("settings.sync.description")}</small>
+          </span>
+          <ChevronRight aria-hidden="true" size={18} />
         </button>
       </section>
     ) : (

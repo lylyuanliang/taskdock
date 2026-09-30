@@ -1,4 +1,14 @@
-import { Check, Cloud, LockKeyhole, Play, RefreshCw, Save, ShieldCheck } from "lucide-react";
+import {
+  Check,
+  Cloud,
+  Eye,
+  EyeOff,
+  LockKeyhole,
+  Play,
+  RefreshCw,
+  Save,
+  ShieldCheck,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import type {
   SaveSyncConfigInput,
@@ -20,6 +30,7 @@ interface SyncSettingsPageProps {
   onPause: () => void | Promise<void>;
   onResume: () => void | Promise<void>;
   onSave: (input: SaveSyncConfigInput) => Promise<void>;
+  onRevealPassword?: () => Promise<string | null>;
   onSyncNow: () => Promise<void>;
   onTestConnection: (input: TestSyncConnectionInput) => Promise<void>;
 }
@@ -68,11 +79,14 @@ export default function SyncSettingsPage({
   onPause,
   onResume,
   onSave,
+  onRevealPassword,
   onSyncNow,
   onTestConnection,
 }: SyncSettingsPageProps) {
   const [form, setForm] = useState<SaveSyncConfigInput>(emptyForm);
   const [message, setMessage] = useState<string | null>(null);
+  const [isPasswordRevealed, setIsPasswordRevealed] = useState(false);
+  const [isRevealingPassword, setIsRevealingPassword] = useState(false);
 
   useEffect(() => {
     if (config !== null) {
@@ -84,9 +98,11 @@ export default function SyncSettingsPage({
           paused: config.paused,
           remoteDirectory: config.remoteDirectory,
           username: config.username,
+          webdavPassword: "",
           strategy: config.strategy,
           frequency: config.frequency,
         }));
+        setIsPasswordRevealed(false);
       }, 0);
 
       return () => window.clearTimeout(requestId);
@@ -97,6 +113,47 @@ export default function SyncSettingsPage({
 
   function setField<K extends keyof SaveSyncConfigInput>(field: K, value: SaveSyncConfigInput[K]) {
     setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function handleUsernameChange(username: string) {
+    const matchesSavedAccount = config?.username === username.trim();
+    setForm((current) => ({
+      ...current,
+      username,
+      webdavPassword: matchesSavedAccount ? current.webdavPassword : "",
+    }));
+    if (!matchesSavedAccount) {
+      setIsPasswordRevealed(false);
+    }
+  }
+
+  const hasSavedWebdavPassword =
+    config?.webdavPasswordSaved === true && config.username === form.username.trim();
+  const showPasswordToggle =
+    onRevealPassword !== undefined &&
+    hasSavedWebdavPassword &&
+    (!form.webdavPassword || isPasswordRevealed);
+
+  async function revealSavedPassword() {
+    if (!showPasswordToggle || isRevealingPassword || onRevealPassword === undefined) {
+      return;
+    }
+
+    setIsRevealingPassword(true);
+    setMessage(null);
+    try {
+      const password = await onRevealPassword();
+      if (!password) {
+        setMessage(t("settings.sync.passwordUnavailable"));
+        return;
+      }
+      setField("webdavPassword", password);
+      setIsPasswordRevealed(true);
+    } catch (error: unknown) {
+      setMessage(getErrorMessage(error, "settings.sync.passwordUnavailable"));
+    } finally {
+      setIsRevealingPassword(false);
+    }
   }
 
   async function handleSave() {
@@ -193,18 +250,52 @@ export default function SyncSettingsPage({
             <label>
               <span>{t("settings.sync.username")}</span>
               <input
-                onChange={(event) => setField("username", event.target.value)}
+                onChange={(event) => handleUsernameChange(event.target.value)}
                 type="text"
                 value={form.username}
               />
             </label>
-            <label>
+            <label className="sync-password-field">
               <span>{t("settings.sync.password")}</span>
-              <input
-                onChange={(event) => setField("webdavPassword", event.target.value)}
-                type="password"
-                value={form.webdavPassword}
-              />
+              <div className="sync-secret-input">
+                <input
+                  onChange={(event) => {
+                    setField("webdavPassword", event.target.value);
+                    if (!event.target.value) {
+                      setIsPasswordRevealed(false);
+                    }
+                  }}
+                  placeholder={hasSavedWebdavPassword ? "********" : undefined}
+                  type={isPasswordRevealed ? "text" : "password"}
+                  value={form.webdavPassword}
+                />
+                {showPasswordToggle ? (
+                  <button
+                    aria-label={
+                      isPasswordRevealed
+                        ? t("settings.sync.hidePassword")
+                        : t("settings.sync.showPassword")
+                    }
+                    className="sync-secret-toggle"
+                    disabled={isRevealingPassword}
+                    onClick={() => {
+                      if (isPasswordRevealed) {
+                        setIsPasswordRevealed(false);
+                        setField("webdavPassword", "");
+                      } else {
+                        void revealSavedPassword();
+                      }
+                    }}
+                    type="button"
+                  >
+                    {isPasswordRevealed ? (
+                      <EyeOff aria-hidden="true" size={16} />
+                    ) : (
+                      <Eye aria-hidden="true" size={16} />
+                    )}
+                  </button>
+                ) : null}
+              </div>
             </label>
           </div>
           <button

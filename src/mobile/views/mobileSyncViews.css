@@ -143,7 +143,8 @@
 
 .mobile-sync__primary:disabled,
 .mobile-sync__save:disabled,
-.mobile-sync__test-button:disabled {
+.mobile-sync__test-button:disabled,
+.mobile-sync__secret-toggle:disabled {
   cursor: wait;
   opacity: 0.62;
 }
@@ -280,6 +281,17 @@
   white-space: nowrap;
 }
 
+.mobile-sync__password-field {
+  gap: 7px;
+}
+
+.mobile-sync__secret-input {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+}
+
 .mobile-sync__field input,
 .mobile-sync__field select {
   width: 100%;
@@ -298,6 +310,7 @@
 
 .mobile-sync__field input:focus-visible,
 .mobile-sync__field select:focus-visible,
+.mobile-sync__secret-toggle:focus-visible,
 .mobile-sync__segmented button:focus-visible,
 .mobile-sync__test-button:focus-visible,
 .mobile-sync__primary:focus-visible,
@@ -305,6 +318,31 @@
 .mobile-sync__conflict-card:focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
+}
+
+.mobile-sync__secret-input input {
+  padding-right: 42px;
+}
+
+.mobile-sync__secret-toggle {
+  position: absolute;
+  right: 6px;
+  display: grid;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  color: var(--color-text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  place-items: center;
+}
+
+.mobile-sync__secret-toggle:hover,
+.mobile-sync__secret-toggle:focus-visible {
+  color: var(--color-accent);
+  background: var(--color-surface-high);
+  border-color: var(--color-border);
 }
 
 .mobile-sync__test-footer {
@@ -417,10 +455,52 @@
 }
 
 .mobile-sync__toggle input {
-  width: 20px;
-  height: 20px;
+  position: relative;
+  width: 42px;
+  height: 24px;
+  margin: 0;
   flex: 0 0 auto;
-  accent-color: var(--color-accent);
+  appearance: none;
+  cursor: pointer;
+  background: var(--color-surface-low);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease;
+}
+
+.mobile-sync__toggle input::after {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  content: "";
+  background: var(--color-text-secondary);
+  border-radius: 50%;
+  transition:
+    background-color 180ms ease,
+    transform 180ms ease;
+}
+
+.mobile-sync__toggle input:checked {
+  background: color-mix(in srgb, var(--color-accent) 22%, var(--color-surface-low));
+  border-color: var(--color-accent);
+}
+
+.mobile-sync__toggle input:checked::after {
+  background: var(--color-accent);
+  transform: translateX(18px);
+}
+
+.mobile-sync__toggle input:hover {
+  border-color: var(--color-accent);
+}
+
+.mobile-sync__toggle input:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
 }
 
 .mobile-sync__encryption-row {
@@ -491,8 +571,15 @@
 
 .mobile-sync__message,
 .mobile-sync__status {
+  position: sticky;
+  z-index: 2;
+  top: 0;
   margin: 0;
+  padding: 9px 11px;
   color: var(--color-text-secondary);
+  background: color-mix(in srgb, var(--color-surface) 96%, transparent);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
   font-size: 12px;
   line-height: 1.45;
 }
@@ -500,6 +587,10 @@
 .mobile-sync__message[role="alert"],
 .mobile-sync__status--error {
   color: var(--color-danger);
+}
+
+.mobile-sync__message[role="status"] {
+  color: var(--color-accent);
 }
 
 .mobile-sync[data-state="offline"],

@@ -2,6 +2,8 @@ import {
   Check,
   ChevronRight,
   Cloud,
+  Eye,
+  EyeOff,
   KeyRound,
   LockKeyhole,
   Radio,
@@ -29,6 +31,7 @@ export interface MobileSyncSettingsViewProps {
   isSaving: boolean;
   isOnline: boolean;
   onSave: (input: SaveSyncConfigInput) => Promise<void>;
+  onRevealPassword?: () => Promise<string | null>;
   onTestConnection: (input: TestSyncConnectionInput) => Promise<{ ok: boolean }>;
   onSyncNow: (strategy?: SyncStrategy) => Promise<void>;
   onReviewConflicts: () => void;
@@ -100,11 +103,14 @@ export default function MobileSyncSettingsView({
   onSyncNow,
   onReviewConflicts,
   visualState,
+  onRevealPassword,
 }: MobileSyncSettingsViewProps) {
   const [form, setForm] = useState<SaveSyncConfigInput>(emptyForm);
   const [message, setMessage] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isTestingConnection, setIsTestingConnection] = useState(false);
+  const [isPasswordRevealed, setIsPasswordRevealed] = useState(false);
+  const [isRevealingPassword, setIsRevealingPassword] = useState(false);
   const syncPending = useRef(false);
   const testConnectionPending = useRef(false);
   const stateValue =
@@ -125,11 +131,14 @@ export default function MobileSyncSettingsView({
           endpoint: config.endpoint,
           remoteDirectory: config.remoteDirectory,
           username: config.username,
+          webdavPassword: "",
+          encryptionPassphrase: "",
           encryptionEnabled: config.encryptionEnabled,
           paused: config.paused,
           strategy: config.strategy,
           frequency: config.frequency,
         }));
+        setIsPasswordRevealed(false);
       }, 0);
       return () => window.clearTimeout(requestId);
     }
@@ -138,6 +147,31 @@ export default function MobileSyncSettingsView({
 
   function setField<K extends keyof SaveSyncConfigInput>(field: K, value: SaveSyncConfigInput[K]) {
     setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  const hasSavedWebdavPassword =
+    config?.webdavPasswordSaved === true && config.username === form.username.trim();
+
+  async function revealSavedPassword() {
+    if (!hasSavedWebdavPassword || isRevealingPassword || onRevealPassword === undefined) {
+      return;
+    }
+
+    setIsRevealingPassword(true);
+    setMessage(null);
+    try {
+      const password = await onRevealPassword();
+      if (!password) {
+        setMessage(t("settings.sync.passwordUnavailable"));
+        return;
+      }
+      setField("webdavPassword", password);
+      setIsPasswordRevealed(true);
+    } catch (error: unknown) {
+      setMessage(safeError(error));
+    } finally {
+      setIsRevealingPassword(false);
+    }
   }
 
   async function save() {
@@ -269,15 +303,35 @@ export default function MobileSyncSettingsView({
           <span className="mobile-sync__ledger-ok">{t("settings.sync.httpOk")}</span>
         </div>
       </section>
+      {isTestingConnection || isSyncing || message ? (
+        <p
+          aria-label={
+            isTestingConnection
+              ? t("settings.sync.connectionTesting")
+              : isSyncing
+                ? t("settings.sync.syncing")
+                : undefined
+          }
+          className="mobile-sync__message"
+          role={isTestingConnection || isSyncing ? "status" : "alert"}
+        >
+          {isTestingConnection
+            ? t("settings.sync.connectionTesting")
+            : isSyncing
+              ? t("settings.sync.syncing")
+              : message}
+        </p>
+      ) : null}
       <div className="mobile-sync__primary-wrap">
         <button
+          aria-busy={isSyncing}
           className="mobile-sync__primary"
           disabled={isSyncing}
           onClick={() => void syncNow()}
           type="button"
         >
           <RefreshCw aria-hidden="true" size={16} />
-          {t("settings.syncNow")}
+          {isSyncing ? t("settings.sync.syncing") : t("settings.syncNow")}
         </button>
         <p>{t("settings.sync.manualOnly")}</p>
       </div>
@@ -330,17 +384,51 @@ export default function MobileSyncSettingsView({
               value={form.username}
             />
           </label>
-          <label className="mobile-sync__field">
+          <label className="mobile-sync__field mobile-sync__password-field">
             <span>
               {t("settings.sync.password")}
-              <small>{t("settings.sync.keystoreSecured")}</small>
+              <small>
+                {hasSavedWebdavPassword
+                  ? t("settings.sync.passwordSaved")
+                  : t("settings.sync.keystoreSecured")}
+              </small>
             </span>
-            <input
-              aria-label={t("settings.sync.password")}
-              onChange={(event) => setField("webdavPassword", event.target.value)}
-              type="password"
-              value={form.webdavPassword}
-            />
+            <div className="mobile-sync__secret-input">
+              <input
+                aria-label={t("settings.sync.password")}
+                autoComplete="current-password"
+                onChange={(event) => setField("webdavPassword", event.target.value)}
+                placeholder={hasSavedWebdavPassword ? "••••••••" : undefined}
+                type={isPasswordRevealed ? "text" : "password"}
+                value={form.webdavPassword}
+              />
+              {hasSavedWebdavPassword ? (
+                <button
+                  aria-label={
+                    isPasswordRevealed
+                      ? t("settings.sync.hidePassword")
+                      : t("settings.sync.showPassword")
+                  }
+                  className="mobile-sync__secret-toggle"
+                  disabled={isRevealingPassword}
+                  onClick={() => {
+                    if (isPasswordRevealed) {
+                      setIsPasswordRevealed(false);
+                      setField("webdavPassword", "");
+                    } else {
+                      void revealSavedPassword();
+                    }
+                  }}
+                  type="button"
+                >
+                  {isPasswordRevealed ? (
+                    <EyeOff aria-hidden="true" size={16} />
+                  ) : (
+                    <Eye aria-hidden="true" size={16} />
+                  )}
+                </button>
+              ) : null}
+            </div>
           </label>
           <div className="mobile-sync__test-footer">
             <button
@@ -485,20 +573,6 @@ export default function MobileSyncSettingsView({
           {isSaving ? t("settings.saving") : t("settings.save")}
         </button>
       </div>
-      {isTestingConnection ? (
-        <p
-          aria-label={t("settings.sync.connectionTesting")}
-          className="mobile-sync__message"
-          role="status"
-        >
-          {t("settings.sync.connectionTesting")}
-        </p>
-      ) : null}
-      {message ? (
-        <p className="mobile-sync__message" role="alert">
-          {message}
-        </p>
-      ) : null}
     </section>
   );
 }

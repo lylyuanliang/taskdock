@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::{future::Future, sync::Arc, time::Duration};
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -20,6 +20,8 @@ const CONFIG_ERROR_CODE: &str = "sync.configuration.missing";
 const CONFIG_ERROR_KEY: &str = "errors.sync.configuration.missing";
 const SNAPSHOT_ERROR_CODE: &str = "sync.snapshot.invalid";
 const SNAPSHOT_ERROR_KEY: &str = "errors.sync.snapshot.invalid";
+const REMOTE_TIMEOUT_ERROR_CODE: &str = "sync.remote.timeout";
+const REMOTE_TIMEOUT_ERROR_KEY: &str = "errors.sync.remote.timeout";
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -112,20 +114,20 @@ where
             .repository
             .get_sync_baseline()?
             .unwrap_or_else(|| SyncSnapshot::new(Uuid::nil(), Vec::new()));
-        let remote_payload = match self.transport.fetch_snapshot(&config, &password).await {
-            Ok(payload) => payload,
-            Err(error) => {
-                self.record_sync_failure(&error)?;
-                return Err(error);
-            }
-        };
+        let remote_payload =
+            match with_remote_timeout(self.transport.fetch_snapshot(&config, &password)).await {
+                Ok(payload) => payload,
+                Err(error) => {
+                    self.record_sync_failure(&error)?;
+                    return Err(error);
+                }
+            };
 
         let Some(remote_payload) = remote_payload else {
             let payload = encode_snapshot(&local, &config, &encryption_passphrase)?;
-            if let Err(error) = self
-                .transport
-                .store_snapshot(&config, &password, &payload)
-                .await
+            if let Err(error) =
+                with_remote_timeout(self.transport.store_snapshot(&config, &password, &payload))
+                    .await
             {
                 self.record_sync_failure(&error)?;
                 return Err(error);
@@ -182,10 +184,9 @@ where
         let uploaded = !sync_entities_equal(&final_local.entities, &remote.entities);
         if uploaded {
             let payload = encode_snapshot(&final_local, &config, &encryption_passphrase)?;
-            if let Err(error) = self
-                .transport
-                .store_snapshot(&config, &password, &payload)
-                .await
+            if let Err(error) =
+                with_remote_timeout(self.transport.store_snapshot(&config, &password, &payload))
+                    .await
             {
                 self.record_sync_failure(&error)?;
                 return Err(error);
@@ -203,7 +204,7 @@ where
         config: &super::sync::SyncConfig,
         password: &str,
     ) -> Result<(), AppError> {
-        self.transport.test_connection(config, password).await
+        with_remote_timeout(self.transport.test_connection(config, password)).await
     }
 
     fn record_sync_failure(&self, error: &AppError) -> Result<(), AppError> {
@@ -320,9 +321,40 @@ fn snapshot_error() -> AppError {
     )
 }
 
+async fn with_remote_timeout<T, F>(operation: F) -> Result<T, AppError>
+where
+    F: Future<Output = Result<T, AppError>>,
+{
+    tokio::time::timeout(remote_operation_timeout(), operation)
+        .await
+        .map_err(|_| remote_timeout_error())?
+}
+
+#[cfg(test)]
+fn remote_operation_timeout() -> Duration {
+    Duration::from_millis(20)
+}
+
+#[cfg(not(test))]
+fn remote_operation_timeout() -> Duration {
+    Duration::from_secs(20)
+}
+
+fn remote_timeout_error() -> AppError {
+    AppError::new(
+        REMOTE_TIMEOUT_ERROR_CODE,
+        REMOTE_TIMEOUT_ERROR_KEY,
+        AppErrorKind::Remote,
+    )
+}
+
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex};
+    use std::{
+        future::pending,
+        sync::{Arc, Mutex},
+        time::Duration,
+    };
 
     use crate::{
         domain::{
@@ -412,6 +444,36 @@ mod tests {
         }
     }
 
+    #[derive(Clone, Default)]
+    struct NeverTransport;
+
+    impl WebDavTransport for NeverTransport {
+        fn test_connection<'a>(
+            &'a self,
+            _config: &'a SyncConfig,
+            _password: &'a str,
+        ) -> TransportFuture<'a, ()> {
+            Box::pin(pending())
+        }
+
+        fn fetch_snapshot<'a>(
+            &'a self,
+            _config: &'a SyncConfig,
+            _password: &'a str,
+        ) -> TransportFuture<'a, Option<Vec<u8>>> {
+            Box::pin(pending())
+        }
+
+        fn store_snapshot<'a>(
+            &'a self,
+            _config: &'a SyncConfig,
+            _password: &'a str,
+            _payload: &'a [u8],
+        ) -> TransportFuture<'a, ()> {
+            Box::pin(pending())
+        }
+    }
+
     #[test]
     fn password_key_is_namespaced() {
         assert_eq!(webdav_password_key("alice"), "webdav:alice");
@@ -441,6 +503,69 @@ mod tests {
             .test_connection_with_config(&config, "third-party-password")
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn times_out_when_connection_transport_never_returns() {
+        let repository = Arc::new(SqliteTaskRepository::in_memory().unwrap());
+        let credentials = Arc::new(FakeCredentials::default());
+        let transport = Arc::new(NeverTransport);
+        let service = SyncService::new(
+            Arc::clone(&repository),
+            Arc::clone(&transport),
+            Arc::clone(&credentials),
+        );
+        let config = SyncConfig {
+            endpoint: "https://dav.example.test/dav/".to_owned(),
+            remote_directory: "taskdock-sync".to_owned(),
+            username: "user@example.com".to_owned(),
+            encryption_enabled: false,
+            paused: false,
+            strategy: SyncStrategy::SmartMerge,
+            frequency: SyncFrequency::Manual,
+        };
+
+        let error = tokio::time::timeout(
+            Duration::from_secs(1),
+            service.test_connection_with_config(&config, "third-party-password"),
+        )
+        .await
+        .expect("connection should finish with a timeout")
+        .unwrap_err();
+
+        assert_eq!(error.code(), "sync.remote.timeout");
+    }
+
+    #[tokio::test]
+    async fn times_out_when_sync_transport_never_returns() {
+        let repository = Arc::new(SqliteTaskRepository::in_memory().unwrap());
+        let config = SyncConfig {
+            endpoint: "https://dav.example.test".to_owned(),
+            remote_directory: "todo".to_owned(),
+            username: "alice".to_owned(),
+            encryption_enabled: false,
+            paused: false,
+            strategy: SyncStrategy::SmartMerge,
+            frequency: SyncFrequency::Manual,
+        };
+        repository.save_sync_config(&config).unwrap();
+        let credentials = Arc::new(FakeCredentials::default());
+        credentials
+            .save_secret("webdav:alice", "dav-password")
+            .unwrap();
+        let transport = Arc::new(NeverTransport);
+        let service = SyncService::new(
+            Arc::clone(&repository),
+            Arc::clone(&transport),
+            Arc::clone(&credentials),
+        );
+
+        let error = tokio::time::timeout(Duration::from_secs(1), service.sync_now())
+            .await
+            .expect("sync should finish with a timeout")
+            .unwrap_err();
+
+        assert_eq!(error.code(), "sync.remote.timeout");
     }
 
     #[tokio::test]

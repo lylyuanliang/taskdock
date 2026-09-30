@@ -54,11 +54,13 @@ $env:Path = "$env:ANDROID_HOME\platform-tools;$env:ANDROID_HOME\cmdline-tools\la
 .\package-release.bat all
 ```
 
-菜单和 `all` 参数只执行 Release 构建，以避免把 Debug APK 当作常规发布产物。需要排查问题时，再显式执行 Debug 构建：
+菜单第 2 项用于测试的 Debug APK；第 3、4 项分别是 Release APK 和 AAB。`all` 参数会同时构建 Windows、四架构 Debug APK、Release APK 和 AAB，方便一次性取得测试与发布产物：
 
 ```powershell
 .\package-release.bat android-debug-apk
 ```
+
+双击脚本时选择 `2` 即可构建 Debug APK；选择 `5` 会执行全量构建。
 
 Release APK 默认只构建 `aarch64`（arm64-v8a）并按 ABI 拆分，适合现代 Android 设备测试和分发；Debug APK 会显式构建 `aarch64`、`armv7`、`i686`、`x86_64` 四个 ABI，并按 ABI 生成四个独立的带调试签名 APK，仅用于诊断和设备验收，体积不能用于判断正式包体积。Android AAB 保留全架构，由应用商店按设备 ABI 分发。
 

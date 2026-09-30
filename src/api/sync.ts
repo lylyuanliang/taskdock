@@ -18,6 +18,7 @@ export interface SyncConfigDto {
   endpoint: string;
   remoteDirectory: string;
   username: string;
+  webdavPasswordSaved: boolean;
   encryptionEnabled: boolean;
   paused: boolean;
   strategy: SyncStrategy;
@@ -81,6 +82,10 @@ export async function getSyncConfig(): Promise<SyncConfigDto | null> {
 
 export async function saveSyncConfig(input: SaveSyncConfigInput): Promise<SyncConfigDto> {
   return invoke<SyncConfigDto>("save_sync_config", { input });
+}
+
+export async function getSavedWebdavPassword(): Promise<string | null> {
+  return invoke<string | null>("get_saved_webdav_password");
 }
 
 export async function testSyncConnection(input: TestSyncConnectionInput): Promise<{ ok: boolean }> {

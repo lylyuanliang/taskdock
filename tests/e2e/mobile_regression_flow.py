@@ -39,12 +39,14 @@ MOBILE_REGRESSION_FIXTURE = r"""
     createProjectCalls: 0,
     saveSyncConfigCalls: 0,
     testSyncConnectionCalls: 0,
+    syncNowCalls: 0,
   };
   window.__TAURI_INTERNALS__.invoke = async (command, args = {}) => {
     if (command === "get_sync_config") return {
       endpoint: "https://dav.example.test/files",
       remoteDirectory: "taskdock-sync",
       username: "alice",
+      webdavPasswordSaved: true,
       encryptionEnabled: false,
       paused: false,
       strategy: "smartMerge",
@@ -62,6 +64,19 @@ MOBILE_REGRESSION_FIXTURE = r"""
     if (command === "test_sync_connection") {
       window.__mobileRegression.testSyncConnectionCalls += 1;
       return { ok: true };
+    }
+    if (command === "get_saved_webdav_password") return "saved-password";
+    if (command === "sync_now") {
+      window.__mobileRegression.syncNowCalls += 1;
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      return {
+        status: "synced",
+        localOnly: 0,
+        remoteOnly: 0,
+        merged: 0,
+        conflicts: 0,
+        uploaded: false,
+      };
     }
     if (command === "list_projects") return projects;
     if (command === "create_project") {
@@ -88,12 +103,23 @@ def run_regression_flow(page: Page) -> None:
     page.get_by_role("button", name="Sync settings").click()
     expect(page.get_by_role("region", name="Sync settings")).to_be_visible()
 
-    page.get_by_label("Password").fill("test-password")
+    page.get_by_role("button", name="Show saved password").click()
+    expect(page.get_by_role("textbox", name="Password")).to_have_value("saved-password")
+    page.get_by_role("button", name="Hide password").click()
+    expect(page.get_by_role("textbox", name="Password")).to_have_value("")
+
+    page.get_by_role("button", name="Sync now").click()
+    expect(page.get_by_role("status", name="Syncing...")).to_be_visible()
+    expect(page.get_by_test_id("mobile-sync-status-card")).to_be_visible()
+    expect(page.get_by_role("alert")).to_have_text("Action complete")
+    assert page.evaluate("() => window.__mobileRegression.syncNowCalls") == 1
+
+    page.get_by_role("textbox", name="Password").fill("test-password")
     page.get_by_role("button", name="Test connection").click()
     expect(page.get_by_role("alert")).to_have_text("Connection successful; WebDAV is available.")
     assert page.evaluate("() => window.__mobileRegression.testSyncConnectionCalls") == 1
 
-    save_button = page.get_by_role("button", name="Save")
+    save_button = page.get_by_role("button", name="Save settings")
     expect(save_button).to_be_visible()
     geometry = save_button.evaluate(
         """node => {

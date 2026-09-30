@@ -10,6 +10,7 @@ const config: SyncConfigDto = {
   endpoint: "https://dav.example.test/files",
   remoteDirectory: "taskdock",
   username: "alice",
+  webdavPasswordSaved: false,
   encryptionEnabled: true,
   paused: false,
   strategy: "smartMerge",
@@ -104,6 +105,61 @@ it("sends only one sync request for duplicate taps", async () => {
   fireEvent.click(button);
   fireEvent.click(button);
   await waitFor(() => expect(onSyncNow).toHaveBeenCalledTimes(1));
+});
+
+it("shows immediate sync feedback below the status card", async () => {
+  const user = userEvent.setup();
+  let resolveSync: (() => void) | undefined;
+  const onSyncNow = vi.fn(
+    () =>
+      new Promise<void>((resolve) => {
+        resolveSync = resolve;
+      }),
+  );
+  renderView({ onSyncNow });
+
+  await user.click(screen.getByRole("button", { name: /sync now|立即同步/i }));
+
+  const feedback = screen.getByRole("status", { name: /syncing|正在同步/i });
+  expect(feedback).toBeInTheDocument();
+  expect(screen.getByTestId("mobile-sync-status-card").compareDocumentPosition(feedback)).toBe(
+    Node.DOCUMENT_POSITION_FOLLOWING,
+  );
+
+  resolveSync?.();
+  await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(/complete|完成/i));
+});
+
+it("shows a saved-password mask without exposing the secret", async () => {
+  renderView({
+    config: { ...config, webdavPasswordSaved: true } as SyncConfigDto,
+  });
+
+  const password = await screen.findByLabelText(/password|密码/i);
+  await waitFor(() => expect(password).toHaveAttribute("placeholder", "••••••••"));
+  expect(password).toHaveValue("");
+  expect(
+    screen.getByRole("button", { name: /show saved password|显示已保存密码/i }),
+  ).toBeInTheDocument();
+});
+
+it("reveals a saved password only after an explicit eye-button tap", async () => {
+  const user = userEvent.setup();
+  const onRevealPassword = vi.fn().mockResolvedValue("saved-password");
+  renderView({
+    config: { ...config, webdavPasswordSaved: true } as SyncConfigDto,
+    onRevealPassword,
+  });
+
+  const showButton = await screen.findByRole("button", {
+    name: /show saved password|显示已保存密码/i,
+  });
+  await user.click(showButton);
+
+  await waitFor(() => expect(onRevealPassword).toHaveBeenCalledTimes(1));
+  expect(screen.getByRole("textbox", { name: /password|密码/i })).toHaveValue("saved-password");
+  expect(screen.getByRole("textbox", { name: /password|密码/i })).toHaveAttribute("type", "text");
+  expect(screen.getByRole("button", { name: /hide password|隐藏密码/i })).toBeInTheDocument();
 });
 
 it("tests connection without saving credentials", async () => {

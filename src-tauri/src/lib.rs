@@ -48,8 +48,9 @@ use commands::projects::{archive_project, rename_project};
 use commands::{
     projects::{create_project, list_projects},
     sync::{
-        get_sync_config, get_sync_status, list_sync_conflicts, pause_sync, resolve_sync_conflict,
-        resume_sync, save_sync_config, sync_now, test_sync_connection,
+        get_saved_webdav_password, get_sync_config, get_sync_status, list_sync_conflicts,
+        pause_sync, resolve_sync_conflict, resume_sync, save_sync_config, sync_now,
+        test_sync_connection,
     },
     tasks::{
         complete_task, create_subtask, create_task, create_task_editor, get_task_editor,
@@ -212,6 +213,7 @@ pub fn run() -> tauri::Result<()> {
         set_quick_panel_behavior,
         get_quick_panel_behavior,
         get_sync_config,
+        get_saved_webdav_password,
         save_sync_config,
         test_sync_connection,
         get_sync_status,
@@ -236,6 +238,7 @@ pub fn run() -> tauri::Result<()> {
         list_projects,
         create_project,
         get_sync_config,
+        get_saved_webdav_password,
         save_sync_config,
         test_sync_connection,
         get_sync_status,

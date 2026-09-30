@@ -54,9 +54,10 @@ echo.
 echo TaskDock release builder
 echo =======================
 echo 1. Windows installer
-echo 2. Android release APK
-echo 3. Android release AAB
-echo 4. Build all release targets
+echo 2. Android debug APK (four ABIs)
+echo 3. Android release APK
+echo 4. Android release AAB
+echo 5. Build all targets (debug + release)
 echo 0. Exit
 echo.
 set "choice="
@@ -64,9 +65,10 @@ set /p "choice=Select a target: "
 if errorlevel 1 goto :finish
 
 if "%choice%"=="1" goto :run_windows_menu
-if "%choice%"=="2" goto :run_android_release_menu
-if "%choice%"=="3" goto :run_android_aab_menu
-if "%choice%"=="4" goto :run_all_menu
+if "%choice%"=="2" goto :run_android_debug_menu
+if "%choice%"=="3" goto :run_android_release_menu
+if "%choice%"=="4" goto :run_android_aab_menu
+if "%choice%"=="5" goto :run_all_menu
 if "%choice%"=="0" goto :finish
 
 echo Invalid choice.
@@ -74,6 +76,11 @@ goto :menu
 
 :run_windows_menu
 call :build_windows
+set "exit_code=%errorlevel%"
+goto :finish
+
+:run_android_debug_menu
+call :build_android_debug_apk
 set "exit_code=%errorlevel%"
 goto :finish
 
@@ -188,6 +195,8 @@ exit /b 0
 set "overall_code=0"
 call :build_windows
 if errorlevel 1 set "overall_code=1"
+call :build_android_debug_apk
+if errorlevel 1 set "overall_code=1"
 call :build_android_release_apk
 if errorlevel 1 set "overall_code=1"
 call :build_android_release_aab
@@ -220,19 +229,28 @@ set "PATH=%ANDROID_HOME%\platform-tools;%ANDROID_HOME%\cmdline-tools\latest\bin;
 exit /b 0
 
 :clean_build_cache
-call :stop_android_gradle
-call :remove_dir "%~dp0dist"
-if errorlevel 1 exit /b 1
-call :remove_dir "%~dp0src-tauri\target"
-if errorlevel 1 exit /b 1
-call :remove_dir "%~dp0src-tauri\gen\android\app\build"
-if errorlevel 1 exit /b 1
-call :remove_dir "%~dp0src-tauri\gen\android\app\.cxx"
-if errorlevel 1 exit /b 1
-call :remove_dir "%~dp0src-tauri\gen\android\build"
-if errorlevel 1 exit /b 1
-call :remove_dir "%~dp0src-tauri\gen\android\.gradle"
-if errorlevel 1 exit /b 1
+if exist "%~dp0src-tauri\gen\android\gradlew.bat" pushd "%~dp0src-tauri\gen\android"
+if exist "%~dp0src-tauri\gen\android\gradlew.bat" cmd /d /c gradlew.bat --stop >nul 2>&1
+if exist "%~dp0src-tauri\gen\android\gradlew.bat" popd
+
+for %%D in (
+  "%~dp0dist"
+  "%~dp0src-tauri\target"
+  "%~dp0src-tauri\gen\android\app\build"
+  "%~dp0src-tauri\gen\android\app\.cxx"
+  "%~dp0src-tauri\gen\android\build"
+  "%~dp0src-tauri\gen\android\.gradle"
+) do (
+  for /l %%I in (1,1,3) do (
+    if exist "%%~D" rmdir /s /q "%%~D" 2>nul
+    if exist "%%~D" timeout /t 1 /nobreak >nul
+  )
+  if exist "%%~D" (
+    echo Failed to remove "%%~D".
+    echo Close Android Studio, Gradle or other programs using this directory and try again.
+    exit /b 1
+  )
+)
 exit /b 0
 
 :archive_windows
@@ -299,15 +317,6 @@ if %copy_code% GEQ 8 (
   echo Failed to archive artifacts from "%~1".
   exit /b 1
 )
-exit /b 0
-
-:stop_android_gradle
-if not exist "%~dp0src-tauri\gen\android\gradlew.bat" exit /b 0
-pushd "%~dp0src-tauri\gen\android"
-call gradlew.bat --stop >nul 2>&1
-set "gradle_code=%errorlevel%"
-popd
-if not "%gradle_code%"=="0" echo Could not stop the Android Gradle daemon; cache cleanup may fail if files are locked.
 exit /b 0
 
 :remove_dir

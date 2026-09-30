@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   getSyncConfig,
+  getSavedWebdavPassword,
   getSyncStatus,
   listSyncConflicts,
   pauseSync,
@@ -118,6 +119,7 @@ export default function SettingsWorkspace({ onBack }: SettingsWorkspaceProps) {
             onPause={() => void handlePause()}
             onResume={() => void handleResume()}
             onSave={handleSave}
+            onRevealPassword={getSavedWebdavPassword}
             onSyncNow={handleSync}
             onTestConnection={handleTestConnection}
             state={state}

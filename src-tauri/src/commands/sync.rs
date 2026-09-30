@@ -43,6 +43,7 @@ pub(crate) struct SyncConfigDto {
     endpoint: String,
     remote_directory: String,
     username: String,
+    webdav_password_saved: bool,
     encryption_enabled: bool,
     paused: bool,
     strategy: SyncStrategy,
@@ -97,11 +98,20 @@ pub(crate) struct SyncNowInput {
 pub(crate) fn get_sync_config(
     state: State<'_, AppState>,
 ) -> Result<Option<SyncConfigDto>, SyncCommandError> {
-    state
+    let config = state
         .sync_repository
         .get_sync_config()
-        .map(|config| config.map(SyncConfigDto::from))
-        .map_err(Into::into)
+        .map_err(SyncCommandError::from)?;
+    let Some(config) = config else {
+        return Ok(None);
+    };
+    let password_saved = state
+        .sync_credentials
+        .load_secret(&format!("webdav:{}", config.username))
+        .map_err(SyncCommandError::from)?
+        .is_some();
+
+    Ok(Some(SyncConfigDto::from_config(config, password_saved)))
 }
 
 #[tauri::command]
@@ -175,7 +185,7 @@ pub(crate) fn save_sync_config(
         eprintln!("sync background request failed: {error}");
     }
 
-    Ok(SyncConfigDto::from(config))
+    Ok(SyncConfigDto::from_config(config, true))
 }
 
 fn resolve_secret(
@@ -202,13 +212,54 @@ pub(crate) async fn test_sync_connection(
     state: State<'_, AppState>,
     input: TestSyncConnectionInput,
 ) -> Result<SyncConnectionDto, SyncCommandError> {
-    let (config, password) = normalize_test_connection_input(input)?;
+    let (config, provided_password) = normalize_test_connection_input(input)?;
+    let existing_config = state
+        .sync_repository
+        .get_sync_config()
+        .map_err(SyncCommandError::from)?;
+    let password = resolve_test_connection_password(
+        provided_password,
+        &config.username,
+        existing_config.as_ref(),
+        state.sync_credentials.as_ref(),
+    )?;
     state
         .sync_service
         .test_connection_with_config(&config, &password)
         .await
         .map(|_| SyncConnectionDto { ok: true })
         .map_err(Into::into)
+}
+
+fn resolve_test_connection_password(
+    provided: String,
+    username: &str,
+    existing_config: Option<&SyncConfig>,
+    credentials: &dyn CredentialStore,
+) -> Result<String, SyncCommandError> {
+    let can_reuse_existing = existing_config.is_some_and(|config| config.username == username);
+    resolve_secret(
+        provided,
+        &format!("webdav:{username}"),
+        can_reuse_existing,
+        credentials,
+    )
+}
+
+#[tauri::command]
+pub(crate) fn get_saved_webdav_password(
+    state: State<'_, AppState>,
+) -> Result<Option<String>, SyncCommandError> {
+    let config = state
+        .sync_repository
+        .get_sync_config()
+        .map_err(SyncCommandError::from)?
+        .ok_or_else(SyncCommandError::configuration_missing)?;
+
+    state
+        .sync_credentials
+        .load_secret(&format!("webdav:{}", config.username))
+        .map_err(SyncCommandError::from)
 }
 
 fn normalize_test_connection_input(
@@ -220,10 +271,6 @@ fn normalize_test_connection_input(
     if endpoint.is_empty() || remote_directory.is_empty() || username.is_empty() {
         return Err(SyncCommandError::invalid_input());
     }
-    if input.webdav_password.is_empty() {
-        return Err(SyncCommandError::invalid_input());
-    }
-
     Ok((
         SyncConfig {
             endpoint,
@@ -350,12 +397,13 @@ fn parse_entity_kind(value: &str) -> Result<SyncEntityKind, SyncCommandError> {
     }
 }
 
-impl From<SyncConfig> for SyncConfigDto {
-    fn from(config: SyncConfig) -> Self {
+impl SyncConfigDto {
+    fn from_config(config: SyncConfig, webdav_password_saved: bool) -> Self {
         Self {
             endpoint: config.endpoint,
             remote_directory: config.remote_directory,
             username: config.username,
+            webdav_password_saved,
             encryption_enabled: config.encryption_enabled,
             paused: config.paused,
             strategy: config.strategy,
@@ -426,10 +474,15 @@ impl SyncCommandError {
 mod tests {
     use std::collections::HashMap;
 
-    use crate::{error::AppError, infrastructure::sync_crypto::CredentialStore};
+    use crate::{
+        domain::sync::{SyncConfig, SyncFrequency, SyncStrategy},
+        error::AppError,
+        infrastructure::sync_crypto::CredentialStore,
+    };
 
     use super::{
-        normalize_test_connection_input, resolve_secret, SyncCommandError, TestSyncConnectionInput,
+        normalize_test_connection_input, resolve_secret, resolve_test_connection_password,
+        SyncCommandError, TestSyncConnectionInput,
     };
 
     #[derive(Default)]
@@ -465,6 +518,19 @@ mod tests {
     }
 
     #[test]
+    fn allows_blank_test_password_for_saved_credential_reuse() {
+        let (_, password) = normalize_test_connection_input(TestSyncConnectionInput {
+            endpoint: "https://dav.example.test/dav/".to_owned(),
+            remote_directory: "taskdock-sync".to_owned(),
+            username: "user".to_owned(),
+            webdav_password: String::new(),
+        })
+        .expect("saved credentials may fill the password later");
+
+        assert!(password.is_empty());
+    }
+
+    #[test]
     fn resolves_blank_input_from_existing_credential_store() {
         let credentials = FakeCredentials {
             secrets: HashMap::from([(String::from("webdav:alice"), String::from("secret"))]),
@@ -483,6 +549,33 @@ mod tests {
         assert_eq!(
             resolve_secret(String::new(), "webdav:alice", false, &credentials),
             Err(SyncCommandError::invalid_input())
+        );
+    }
+
+    #[test]
+    fn reuses_saved_password_for_connection_test_when_form_password_is_blank() {
+        let credentials = FakeCredentials {
+            secrets: HashMap::from([(String::from("webdav:alice"), String::from("secret"))]),
+        };
+        let existing_config = SyncConfig {
+            endpoint: "https://dav.example.test".to_owned(),
+            remote_directory: "taskdock-sync".to_owned(),
+            username: "alice".to_owned(),
+            encryption_enabled: true,
+            paused: false,
+            strategy: SyncStrategy::SmartMerge,
+            frequency: SyncFrequency::Manual,
+        };
+
+        assert_eq!(
+            resolve_test_connection_password(
+                String::new(),
+                "alice",
+                Some(&existing_config),
+                &credentials,
+            )
+            .unwrap(),
+            "secret"
         );
     }
 }
